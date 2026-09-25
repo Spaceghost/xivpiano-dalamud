@@ -50,7 +50,7 @@ The window shows your plan, the client in use and each song's bitrate.
 
 ## Requirements
 
-- FFXIV with Dalamud (API 15), on Windows or on Linux under Wine. Songs are 128 kbit/s MP3, decoded in managed
+- FFXIV with Dalamud (API 15), on Windows or on Linux under Wine. Songs are MP3 (128 kbit/s, or 192 on Plus and Premium), decoded in managed
   code ([NLayer](https://github.com/naudio/NLayer)) and played through winmm ([NAudio](https://github.com/naudio/NAudio)),
   so nothing depends on Windows codecs.
 - A Pandora account (free, Plus or Premium), in the United States.
