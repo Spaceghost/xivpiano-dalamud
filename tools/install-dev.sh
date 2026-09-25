@@ -41,7 +41,11 @@ fi
 stage="${XIVPIANO_STAGE:-$(cd "$repo/.." && pwd -P)/xiv-piano-build/devplugin}"
 mkdir -p "$stage"
 src_dir="$(dirname "$dll")"
-for f in XivPiano.json XivPiano.Core.dll XivPiano.Core.pdb XivPiano.deps.json XivPiano.pdb XivPiano.dll; do
+# The plugin's own files, and every assembly beside them: XivPiano plays sound through NAudio and
+# decodes MP3 with NLayer, and a dev copy without them loads but cannot play.
+files=(XivPiano.json XivPiano.Core.pdb XivPiano.deps.json XivPiano.pdb)
+for f in "$src_dir"/*.dll; do files+=("$(basename "$f")"); done
+for f in "${files[@]}"; do
   [[ -f "$src_dir/$f" ]] || continue
   cp "$src_dir/$f" "$stage/.$f.tmp" && mv -f "$stage/.$f.tmp" "$stage/$f"
 done
