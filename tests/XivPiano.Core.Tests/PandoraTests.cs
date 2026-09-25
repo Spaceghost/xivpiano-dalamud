@@ -86,7 +86,16 @@ public class PandoraCryptoTests
 /// <summary>A fake Pandora: decrypts what the client sends and answers by method.</summary>
 internal sealed class FakePandora : HttpMessageHandler
 {
-    private readonly PandoraCrypto serverSide = new(Partner.Android with { EncryptKey = Partner.Android.DecryptKey, DecryptKey = Partner.Android.EncryptKey });
+    // Pandora's side of each client: it reads with the client's encrypt key and writes with its decrypt key.
+    private static PandoraCrypto ServerSide(Partner p) => new(p with { EncryptKey = p.DecryptKey, DecryptKey = p.EncryptKey });
+
+    private static readonly PandoraCrypto AndroidSide = ServerSide(Partner.Android);
+    private static readonly PandoraCrypto OneSide = ServerSide(Partner.PandoraOne);
+
+    /// <summary>What auth.userLogin says about the account.</summary>
+    public bool IsSubscriber { get; set; }
+
+    public bool HasAudioAds { get; set; } = true;
 
     public List<(string Method, Dictionary<string, string> Query, JsonObject Body)> Calls { get; } = [];
 
@@ -102,10 +111,15 @@ internal sealed class FakePandora : HttpMessageHandler
         var query = request.RequestUri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
             .Select(p => p.Split('=', 2)).ToDictionary(p => p[0], p => Uri.UnescapeDataString(p[1]));
         var method = query["method"];
+        // Like Pandora: the Pandora One client only answers on internal-tuner, and only for paid listeners.
+        var one = request.RequestUri.Host == Partner.PandoraOne.Host;
+        var serverSide = one ? OneSide : AndroidSide;
         var raw = await request.Content!.ReadAsStringAsync(ct);
         var json = method == "auth.partnerLogin" ? raw : Encoding.UTF8.GetString(serverSide.Decrypt(raw)).TrimEnd('\0');
         var body = (JsonObject)JsonNode.Parse(json)!;
-        Calls.Add((method, query, body));
+        Calls.Add((one ? "one:" + method : method, query, body));
+        if (one && method == "auth.userLogin" && !IsSubscriber && HasAudioAds)
+            return Json(new JsonObject { ["stat"] = "fail", ["code"] = 1003, ["message"] = "LISTENER_NOT_AUTHORIZED" });
 
         if (method != "auth.partnerLogin" && method != "auth.userLogin" && ExpireTokenOnce > 0)
         {
@@ -122,9 +136,9 @@ internal sealed class FakePandora : HttpMessageHandler
                 ["syncTime"] = serverSide.Encrypt($"abcd{ServerTime}"),
             },
             "auth.userLogin" => body["password"]?.GetValue<string>() == "right"
-                ? new JsonObject { ["userId"] = "u1", ["userAuthToken"] = "user+token", ["isSubscriber"] = false }
+                ? new JsonObject { ["userId"] = "u1", ["userAuthToken"] = "user+token", ["isSubscriber"] = IsSubscriber, ["hasAudioAds"] = HasAudioAds }
                 : null,
-            _ => Answer?.Invoke(method, body) ?? new JsonObject(),
+            _ => Answer?.Invoke(one ? "one:" + method : method, body) ?? new JsonObject(),
         };
         return result == null
             ? Json(new JsonObject { ["stat"] = "fail", ["code"] = 1002, ["message"] = "INVALID_LOGIN" })
@@ -141,7 +155,7 @@ public class PandoraClientTests
     {
         var server = new FakePandora();
         var clock = now ?? DateTimeOffset.FromUnixTimeSeconds(1_790_223_000); // 231 s behind the server
-        return (new PandoraClient(new HttpClient(server), Partner.Android, () => clock), server);
+        return (new PandoraClient(new HttpClient(server), () => clock), server);
     }
 
     [Fact]
@@ -250,6 +264,90 @@ public class PandoraClientTests
         await client.LoginAsync("me@example.com", "right", CancellationToken.None);
         Assert.Equal("Features orchestral arrangements and a vocal-centric aesthetic.", await client.ExplainAsync("t1", CancellationToken.None));
     }
+
+    private static JsonNode Playlist(params (string Name, JsonNode? Extra, JsonObject? Map)[] songs)
+    {
+        var items = new JsonArray();
+        foreach (var (name, extra, map) in songs)
+            items.Add(new JsonObject { ["songName"] = name, ["artistName"] = "X", ["trackToken"] = "t-" + name, ["stationId"] = "s1", ["additionalAudioUrl"] = extra, ["audioUrlMap"] = map });
+        return new JsonObject { ["items"] = items };
+    }
+
+    [Fact]
+    public async Task AFreeAccountAsksFor128()
+    {
+        var (client, server) = Make();
+        string? asked = null;
+        server.Answer = (_, body) => { asked = body["additionalAudioUrl"]!.GetValue<string>(); return Playlist(("a", "https://mp3/128", null)); };
+        var account = await client.LoginAsync("me@example.com", "right", CancellationToken.None);
+        Assert.False(account.IsPaid);
+        var t = Assert.Single(await client.GetPlaylistAsync("st", CancellationToken.None));
+        Assert.Equal("HTTP_128_MP3", asked);
+        Assert.Equal(128, t.Bitrate);
+    }
+
+    [Theory]
+    [InlineData(true, true)]   // isSubscriber (as Pithos reads it)
+    [InlineData(false, false)] // no audio ads (as Elpis reads it)
+    public async Task APaidAccountGets192(bool isSubscriber, bool hasAudioAds)
+    {
+        var (client, server) = Make();
+        server.IsSubscriber = isSubscriber;
+        server.HasAudioAds = hasAudioAds;
+        string? asked = null;
+        server.Answer = (_, body) =>
+        {
+            asked = body["additionalAudioUrl"]!.GetValue<string>();
+            return Playlist(("a", new JsonArray("https://mp3/128", "https://mp3/192"), null));
+        };
+        Assert.True((await client.LoginAsync("me@example.com", "right", CancellationToken.None)).IsPaid);
+        var t = Assert.Single(await client.GetPlaylistAsync("st", CancellationToken.None));
+        Assert.Equal("HTTP_128_MP3,HTTP_192_MP3", asked);
+        Assert.Equal(("https://mp3/192", 192), (t.AudioUrl, t.Bitrate));
+        Assert.Equal(Partner.Android, client.Partner);
+
+        client.Quality = AudioQuality.Standard; // save data: 128 even when paid
+        t = Assert.Single(await client.GetPlaylistAsync("st", CancellationToken.None));
+        Assert.Equal("HTTP_128_MP3", asked);
+        Assert.Equal(128, t.Bitrate);
+    }
+
+    [Fact]
+    public async Task APaidAccountWithout192MovesToPandoraOne()
+    {
+        var (client, server) = Make();
+        server.IsSubscriber = true;
+        server.Answer = (method, _) => method.StartsWith("one:", StringComparison.Ordinal)
+            ? Playlist(("a", new JsonArray("https://mp3/128"), new JsonObject { ["highQuality"] = new JsonObject { ["encoding"] = "mp3", ["bitrate"] = "192", ["audioUrl"] = "https://one/192" } }))
+            : Playlist(("a", new JsonArray("https://mp3/128"), null)); // Android offered no 192
+        await client.LoginAsync("me@example.com", "right", CancellationToken.None);
+        var t = Assert.Single(await client.GetPlaylistAsync("st", CancellationToken.None));
+        Assert.Equal(("https://one/192", 192), (t.AudioUrl, t.Bitrate));
+        Assert.Equal(Partner.PandoraOne, client.Partner);
+        Assert.Equal("Pandora One", client.Account!.Client);
+        Assert.Contains(server.Calls, c => c.Method == "one:auth.partnerLogin");
+
+        // Once moved, it stays: the next playlist comes straight from Pandora One.
+        var calls = server.Calls.Count;
+        await client.GetPlaylistAsync("st", CancellationToken.None);
+        Assert.Equal(["one:station.getPlaylist"], server.Calls.Skip(calls).Select(c => c.Method).ToArray());
+    }
+
+    [Fact]
+    public async Task PandoraOneRefusesAFreeAccountSoAndroidIsUsed()
+    {
+        var (client, server) = Make();
+        client.ClientChoice = ClientChoice.PandoraOne;
+        var account = await client.LoginAsync("me@example.com", "right", CancellationToken.None);
+        Assert.Equal("Android", account.Client);
+        Assert.Contains(server.Calls, c => c.Method == "one:auth.userLogin");
+    }
+
+    [Theory]
+    [InlineData("HTTP_192_MP3", 192)]
+    [InlineData("HTTP_128_MP3", 128)]
+    [InlineData("HTTP_32_AACPLUS", null)]
+    public void FormatBitrates(string format, int? kbps) => Assert.Equal(kbps, PandoraClient.FormatBitrate(format));
 
     [Fact]
     public async Task CallsNeedALogin() =>

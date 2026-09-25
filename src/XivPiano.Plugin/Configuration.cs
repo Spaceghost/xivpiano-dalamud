@@ -18,6 +18,12 @@ public sealed class Configuration : IPluginConfiguration
 
     public string LastStationId { get; set; } = "";
 
+    /// <summary>Best = 192 kbit/s MP3 on a paid account (Plus, Premium), 128 otherwise; Standard = always 128.</summary>
+    public XivPiano.Core.Pandora.AudioQuality Quality { get; set; } = XivPiano.Core.Pandora.AudioQuality.Best;
+
+    /// <summary>Which Pandora client to sign in as (Automatic moves a paid account to Pandora One when needed).</summary>
+    public XivPiano.Core.Pandora.ClientChoice Client { get; set; } = XivPiano.Core.Pandora.ClientChoice.Automatic;
+
     /// <summary>0..1, on top of the song's own replay gain.</summary>
     public float Volume { get; set; } = 0.6f;
 

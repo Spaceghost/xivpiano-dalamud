@@ -34,7 +34,37 @@ public enum SearchKind
 
 public sealed record SearchResult(SearchKind Kind, string MusicToken, string Name, string? Artist, int Score);
 
-public sealed record Account(string UserId, bool IsSubscriber);
+/// <summary>
+/// The signed-in listener. <see cref="IsPaid"/>: Pandora Plus or Premium (Pandora One in the older clients),
+/// judged the way Pithos (<c>isSubscriber</c>) and Elpis (no audio ads) each do, either one being enough.
+/// </summary>
+public sealed record Account(string UserId, bool IsSubscriber, bool HasAudioAds, string Client)
+{
+    public bool IsPaid => IsSubscriber || !HasAudioAds;
+}
+
+/// <summary>What to stream.</summary>
+public enum AudioQuality
+{
+    /// <summary>The best MP3 the account gets: 192 kbit/s for paid accounts, 128 otherwise.</summary>
+    Best,
+
+    /// <summary>128 kbit/s MP3 even on a paid account: less data.</summary>
+    Standard,
+}
+
+/// <summary>Which Pandora client identity to log in as.</summary>
+public enum ClientChoice
+{
+    /// <summary>Android (as Elpis and pianobar); a paid account that gets no 192 kbit/s stream there moves to Pandora One.</summary>
+    Automatic,
+
+    /// <summary>Always the Android client.</summary>
+    Android,
+
+    /// <summary>Always the Pandora One client (as Pithos does for subscribers); paid accounts only.</summary>
+    PandoraOne,
+}
 
 /// <summary>A "fail" answer from the API; <see cref="Code"/> is Pandora's error number.</summary>
 public sealed class PandoraException(int code, string message) : Exception(Describe(code, message))

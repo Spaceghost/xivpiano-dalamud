@@ -54,6 +54,7 @@ public sealed class MainWindow : Window, IDisposable
         }
 
         var radio = plugin.Radio;
+        DrawAccountLine();
         var sidebar = 200 * ImGuiHelpers.GlobalScale;
         if (ImGui.BeginChild("##stations", new Vector2(sidebar, 0), true))
             DrawStations(radio);
@@ -64,6 +65,8 @@ public sealed class MainWindow : Window, IDisposable
             DrawNowPlaying(radio);
             ImGui.Separator();
             DrawNewStation(radio);
+            ImGui.Separator();
+            DrawSettings();
         }
 
         ImGui.EndChild();
@@ -149,6 +152,8 @@ public sealed class MainWindow : Window, IDisposable
             var len = t.Length > TimeSpan.Zero ? t.Length : plugin.Audio.Duration;
             var fraction = len > TimeSpan.Zero ? (float)Math.Clamp(pos / len, 0, 1) : 0f;
             ImGui.ProgressBar(fraction, new Vector2(260 * ImGuiHelpers.GlobalScale, 0), $"{pos:m\\:ss} / {len:m\\:ss}");
+            ImGui.SameLine();
+            ImGui.TextDisabled($"{t.Bitrate} kbit/s");
         }
 
         DrawControls(radio, t);
@@ -247,6 +252,65 @@ public sealed class MainWindow : Window, IDisposable
         {
             return null; // no art is fine
         }
+    }
+
+    // ---- account and settings ------------------------------------------------------------------
+
+    private void DrawAccountLine()
+    {
+        if (plugin.Pandora.Account is not { } a)
+            return;
+        var quality = a.IsPaid && plugin.Config.Quality == AudioQuality.Best ? 192 : 128;
+        if (a.IsPaid)
+            ImGui.TextColored(ImGuiColors.ParsedGold, "Pandora Plus / Premium");
+        else
+            ImGui.TextDisabled("Pandora (free)");
+        ImGui.SameLine();
+        ImGui.TextDisabled($"· {quality} kbit/s MP3 · {a.Client} client · {plugin.Config.Email}");
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Sign out"))
+            plugin.SignOut();
+    }
+
+    private void DrawSettings()
+    {
+        if (!ImGui.CollapsingHeader("Settings"))
+            return;
+        var c = plugin.Config;
+        var changed = false;
+        var quality = (int)c.Quality;
+        ImGui.SetNextItemWidth(260 * ImGuiHelpers.GlobalScale);
+        if (ImGui.Combo("Audio quality", ref quality, ["Best my account gets (192 kbit/s on Plus and Premium)", "128 kbit/s (less data)"]))
+        {
+            c.Quality = (AudioQuality)quality;
+            plugin.Pandora.Quality = c.Quality;
+            changed = true;
+        }
+
+        var client = (int)c.Client;
+        ImGui.SetNextItemWidth(260 * ImGuiHelpers.GlobalScale);
+        if (ImGui.Combo("Pandora client", ref client, ["Automatic", "Android (as Elpis and pianobar)", "Pandora One (as Pithos; paid accounts)"]))
+        {
+            c.Client = (ClientChoice)client;
+            changed = true;
+        }
+
+        ImGui.TextDisabled("A different client takes effect at the next sign-in.");
+        changed |= Check("Mute the game's music while a song plays", c.MuteGameMusic, v => c.MuteGameMusic = v);
+        changed |= Check("Pause during cutscenes", c.PauseInCutscenes, v => c.PauseInCutscenes = v);
+        changed |= Check("Say each new song in chat", c.AnnounceInChat, v => c.AnnounceInChat = v);
+        changed |= Check("Show the song in the server info bar", c.ShowInServerInfoBar, v => c.ShowInServerInfoBar = v);
+        changed |= Check("Sign in and resume my last station when the game starts", c.AutoStart, v => c.AutoStart = v);
+        if (changed)
+            plugin.SaveConfig();
+    }
+
+    private static bool Check(string label, bool value, Action<bool> set)
+    {
+        if (!ImGui.Checkbox(label, ref value))
+            return false;
+        set(value);
+        return true;
     }
 
     // ---- new station ---------------------------------------------------------------------------

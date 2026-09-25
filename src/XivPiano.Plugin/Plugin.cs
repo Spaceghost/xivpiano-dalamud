@@ -56,7 +56,7 @@ public sealed class Plugin : IDalamudPlugin
         Config = pi.GetPluginConfig() as Configuration ?? new Configuration();
         Config.Clamp();
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"XivPiano/{typeof(Plugin).Assembly.GetName().Version?.ToString(3)}");
-        Pandora = new PandoraClient(http, Partner.Android);
+        Pandora = new PandoraClient(http) { Quality = Config.Quality, ClientChoice = Config.Client };
         Audio = new AudioOut(http) { Volume = Config.Volume };
 
         window = new MainWindow(this, textures, http);
@@ -120,6 +120,8 @@ public sealed class Plugin : IDalamudPlugin
         {
             try
             {
+                Pandora.Quality = Config.Quality;
+                Pandora.ClientChoice = Config.Client;
                 var account = await Pandora.LoginAsync(email, password, ct).ConfigureAwait(false);
                 Config.Email = email;
                 Config.ProtectedPassword = Config.RememberPassword ? Secrets.Protect(password) : "";
@@ -128,7 +130,7 @@ public sealed class Plugin : IDalamudPlugin
                 Radio = new Radio(Pandora, Audio);
                 Radio.Changed += OnRadioChanged;
                 await Radio.LoadStationsAsync(ct).ConfigureAwait(false);
-                log.Information("Signed in to Pandora ({Kind}); {Count} stations", account.IsSubscriber ? "subscriber" : "free", Radio.Stations.Count);
+                log.Information("Signed in to Pandora ({Kind}, {Client} client); {Count} stations", account.IsPaid ? "paid" : "free", account.Client, Radio.Stations.Count);
                 if (resume && Radio.Stations.FirstOrDefault(s => s.Id == Config.LastStationId) is { } last)
                     await Radio.PlayStationAsync(last, ct).ConfigureAwait(false);
             }
@@ -141,6 +143,16 @@ public sealed class Plugin : IDalamudPlugin
                 SigningIn = false;
             }
         });
+    }
+
+    public void SignOut()
+    {
+        Radio?.Stop();
+        Radio?.Dispose();
+        Radio = null;
+        Pandora.Logout();
+        Config.ProtectedPassword = "";
+        SaveConfig();
     }
 
     private void OnRadioChanged()

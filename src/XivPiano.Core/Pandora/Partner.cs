@@ -17,6 +17,19 @@ public sealed record Partner(string DeviceModel, string Username, string Passwor
         EncryptKey: "6#26FRL$ZWD",
         DecryptKey: "R=U!LH$O2B#",
         Host: "tuner.pandora.com");
+
+    /// <summary>
+    /// The Pandora One client, for paid accounts (Plus, Premium): its playlists carry a 192 kbit/s MP3 as the
+    /// high-quality stream. It only answers on internal-tuner.pandora.com, and only logs in paid listeners.
+    /// This is the route Pithos takes for subscribers.
+    /// </summary>
+    public static readonly Partner PandoraOne = new(
+        DeviceModel: "D01",
+        Username: "pandora one",
+        Password: "TVCKIBGS9AO9TSYLNNFUML0743LH82D",
+        EncryptKey: "2%3WCL*JU$MP]4",
+        DecryptKey: "U#IO$RZPAB%VX2",
+        Host: "internal-tuner.pandora.com");
 }
 
 /// <summary>Pandora's request wrapping: the JSON body zero-padded to 8 bytes, Blowfish-ECB, lowercase hex.</summary>

@@ -10,11 +10,12 @@ namespace XivPiano.Core.Pandora;
 /// pianobar, Pithos, Elpis and pydora. Every call is HTTPS. After the partner login, bodies are Blowfish-wrapped
 /// (see <see cref="PandoraCrypto"/>) and carry the server's clock and the user's token.
 /// </summary>
-public sealed class PandoraClient(HttpClient http, Partner partner, Func<DateTimeOffset>? clock = null)
+public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock = null)
 {
-    private readonly PandoraCrypto crypto = new(partner);
     private readonly Func<DateTimeOffset> now = clock ?? (() => DateTimeOffset.UtcNow);
     private readonly SemaphoreSlim loginGate = new(1, 1);
+    private Partner partner = Partner.Android;
+    private PandoraCrypto crypto = new(Partner.Android);
 
     private string? partnerId;
     private string? partnerAuthToken;
@@ -27,13 +28,44 @@ public sealed class PandoraClient(HttpClient http, Partner partner, Func<DateTim
 
     public bool LoggedIn => userAuthToken != null;
 
+    public AudioQuality Quality { get; set; } = AudioQuality.Best;
+
+    public ClientChoice ClientChoice { get; set; } = ClientChoice.Automatic;
+
+    /// <summary>The client identity the session uses now.</summary>
+    public Partner Partner => partner;
+
+    /// <summary>
+    /// Signs in. Automatic starts as Android (Elpis, pianobar); a paid account that is then offered no 192 kbit/s
+    /// stream is moved to the Pandora One client on its first playlist (Pithos), see <see cref="GetPlaylistAsync"/>.
+    /// A Pandora One login that Pandora refuses (a free account) falls back to Android.
+    /// </summary>
+    public async Task<Account> LoginAsync(string email, string password, CancellationToken ct)
+    {
+        if (ClientChoice == ClientChoice.PandoraOne)
+        {
+            try
+            {
+                return await LoginAsAsync(Partner.PandoraOne, email, password, ct).ConfigureAwait(false);
+            }
+            catch (PandoraException e) when (e.Code is PandoraException.ListenerNotAuthorized or PandoraException.PartnerNotAuthorized)
+            {
+                // Not a paid account after all: the ordinary client still works.
+            }
+        }
+
+        return await LoginAsAsync(Partner.Android, email, password, ct).ConfigureAwait(false);
+    }
+
     // ---- session ---------------------------------------------------------------------------------
 
-    public async Task<Account> LoginAsync(string email, string password, CancellationToken ct)
+    private async Task<Account> LoginAsAsync(Partner client, string email, string password, CancellationToken ct)
     {
         await loginGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            partner = client;
+            crypto = new PandoraCrypto(client);
             partnerId = partnerAuthToken = userId = userAuthToken = null;
             Account = null;
             var partnerResult = await PostAsync("auth.partnerLogin", new JsonObject
@@ -61,7 +93,11 @@ public sealed class PandoraClient(HttpClient http, Partner partner, Func<DateTim
             userId = Str(user, "userId");
             userAuthToken = Str(user, "userAuthToken");
             credentials = (email, password);
-            Account = new Account(userId, user["isSubscriber"]?.GetValue<bool>() ?? false);
+            Account = new Account(
+                userId,
+                user["isSubscriber"]?.GetValue<bool>() ?? false,
+                user["hasAudioAds"]?.GetValue<bool>() ?? true,
+                client == Partner.PandoraOne ? "Pandora One" : "Android");
             return Account;
         }
         finally
@@ -95,49 +131,94 @@ public sealed class PandoraClient(HttpClient http, Partner partner, Func<DateTim
             .ToList();
     }
 
-    /// <summary>The next few songs of a station. Ads (items without a song) are left out.</summary>
+    /// <summary>The extra MP3 formats to ask for: 192 kbit/s only exists for paid accounts.</summary>
+    internal string[] RequestedFormats() =>
+        Account is { IsPaid: true } && Quality == AudioQuality.Best ? ["HTTP_128_MP3", "HTTP_192_MP3"] : ["HTTP_128_MP3"];
+
+    /// <summary>
+    /// The next few songs of a station. Ads (items without a song) are left out. A paid account on the Android
+    /// client that is offered no 192 kbit/s stream (with Automatic and Best) moves to the Pandora One client once,
+    /// whose high-quality stream is the 192 kbit/s MP3, and asks again.
+    /// </summary>
     public async Task<IReadOnlyList<Track>> GetPlaylistAsync(string stationToken, CancellationToken ct)
     {
+        var tracks = await FetchPlaylistAsync(stationToken, ct).ConfigureAwait(false);
+        if (ClientChoice == ClientChoice.Automatic && Quality == AudioQuality.Best && Account is { IsPaid: true }
+            && partner == Partner.Android && tracks.Count > 0 && tracks.All(t => t.Bitrate < 192) && credentials is { } c)
+        {
+            try
+            {
+                await LoginAsAsync(Partner.PandoraOne, c.Email, c.Password, ct).ConfigureAwait(false);
+            }
+            catch (PandoraException)
+            {
+                await LoginAsAsync(Partner.Android, c.Email, c.Password, ct).ConfigureAwait(false);
+                ClientChoice = ClientChoice.Android; // Pandora One is not for this account: stop trying
+                return tracks;
+            }
+
+            return await FetchPlaylistAsync(stationToken, ct).ConfigureAwait(false);
+        }
+
+        return tracks;
+    }
+
+    private async Task<IReadOnlyList<Track>> FetchPlaylistAsync(string stationToken, CancellationToken ct)
+    {
         var fetched = now();
+        var formats = RequestedFormats();
         var result = await CallAsync("station.getPlaylist", new JsonObject
         {
             ["stationToken"] = stationToken,
             ["includeTrackLength"] = true,
-            // The Android partner's own streams are AAC+; this adds a 128 kbit/s MP3 for every account.
-            ["additionalAudioUrl"] = "HTTP_128_MP3",
+            // The clients' own streams are AAC+ (or, for Pandora One, a 192 kbit/s MP3 as high quality); these add
+            // MP3s this player can decode: 128 kbit/s for every account, 192 for paid ones.
+            ["additionalAudioUrl"] = string.Join(",", formats),
         }, ct).ConfigureAwait(false);
+        var cap = Quality == AudioQuality.Standard ? 128 : int.MaxValue;
         return (result["items"] as JsonArray ?? [])
             .OfType<JsonObject>()
             .Where(i => i["songName"] != null)
-            .Select(i => ParseTrack(i, fetched))
+            .Select(i => ParseTrack(i, fetched, formats, cap))
             .OfType<Track>()
             .ToList();
     }
 
-    internal static Track? ParseTrack(JsonObject i, DateTimeOffset fetched)
+    /// <summary>
+    /// The song, with the best MP3 it offers up to <paramref name="capKbps"/>: the extra URLs answer the requested
+    /// formats in order (a string for one, an array for several), and the audioUrlMap may hold an MP3 as well.
+    /// </summary>
+    internal static Track? ParseTrack(JsonObject i, DateTimeOffset fetched, IReadOnlyList<string>? requested = null, int capKbps = int.MaxValue)
     {
-        // additionalAudioUrl is a string for one requested format and an array for several.
-        var mp3 = i["additionalAudioUrl"] switch
+        requested ??= ["HTTP_128_MP3"];
+        var candidates = new List<(string Url, int Bitrate)>();
+        var extra = i["additionalAudioUrl"] switch
         {
-            JsonValue v => v.GetValue<string>(),
-            JsonArray a => a.LastOrDefault()?.GetValue<string>(),
-            _ => null,
+            JsonValue v => [v.GetValue<string>()],
+            JsonArray a => a.Select(x => x?.GetValue<string>()).ToArray(),
+            _ => [],
         };
-        string url, encoding;
-        int bitrate;
-        if (!string.IsNullOrEmpty(mp3))
+        for (var k = 0; k < extra.Length && k < requested.Count; k++)
         {
-            (url, encoding, bitrate) = (mp3, "mp3", 128);
-        }
-        else if (BestMp3(i["audioUrlMap"] as JsonObject) is { } fromMap)
-        {
-            (url, encoding, bitrate) = fromMap;
-        }
-        else
-        {
-            return null; // nothing this player can decode
+            if (!string.IsNullOrEmpty(extra[k]) && FormatBitrate(requested[k]) is { } kbps)
+                candidates.Add((extra[k]!, kbps));
         }
 
+        if (i["audioUrlMap"] is JsonObject map)
+        {
+            foreach (var quality in new[] { "highQuality", "mediumQuality", "lowQuality" })
+            {
+                if (map[quality] is JsonObject q && q["encoding"]?.GetValue<string>() == "mp3" && q["audioUrl"]?.GetValue<string>() is { Length: > 0 } u)
+                    candidates.Add((u, int.TryParse(q["bitrate"]?.ToString(), out var b) ? b : 0));
+            }
+        }
+
+        var pick = candidates.Where(c => c.Bitrate <= capKbps).OrderByDescending(c => c.Bitrate).FirstOrDefault();
+        if (pick.Url == null)
+            pick = candidates.OrderBy(c => c.Bitrate).FirstOrDefault();
+        if (pick.Url == null)
+            return null; // nothing this player can decode
+        var (url, encoding, bitrate) = (pick.Url, "mp3", pick.Bitrate);
         _ = double.TryParse(i["trackGain"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var gain);
         return new Track(
             Str(i, "trackToken"),
@@ -156,17 +237,11 @@ public sealed class PandoraClient(HttpClient http, Partner partner, Func<DateTim
             fetched);
     }
 
-    private static (string, string, int)? BestMp3(JsonObject? map)
+    /// <summary>HTTP_192_MP3 -> 192.</summary>
+    internal static int? FormatBitrate(string format)
     {
-        if (map == null)
-            return null;
-        foreach (var quality in new[] { "highQuality", "mediumQuality", "lowQuality" })
-        {
-            if (map[quality] is JsonObject q && q["encoding"]?.GetValue<string>() == "mp3" && q["audioUrl"]?.GetValue<string>() is { } u)
-                return (u, "mp3", int.TryParse(q["bitrate"]?.ToString(), out var b) ? b : 0);
-        }
-
-        return null;
+        var parts = format.Split('_');
+        return parts.Length == 3 && parts[2] == "MP3" && int.TryParse(parts[1], out var kbps) ? kbps : null;
     }
 
     public Task AddFeedbackAsync(string stationToken, string trackToken, bool positive, CancellationToken ct) =>
@@ -260,7 +335,7 @@ public sealed class PandoraClient(HttpClient http, Partner partner, Func<DateTim
         }
         catch (PandoraException e) when (e.Code == PandoraException.InvalidAuthToken && credentials is { } c)
         {
-            await LoginAsync(c.Email, c.Password, ct).ConfigureAwait(false);
+            await LoginAsAsync(partner, c.Email, c.Password, ct).ConfigureAwait(false);
             return await PostAsync(method, WithSession(body), encrypt: true, ct).ConfigureAwait(false);
         }
     }

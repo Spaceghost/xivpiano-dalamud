@@ -74,7 +74,7 @@ public class RadioTests
 
                 return new JsonObject { ["items"] = items };
             };
-            var client = new PandoraClient(new HttpClient(Server), Partner.Android, () => Now);
+            var client = new PandoraClient(new HttpClient(Server), () => Now);
             await client.LoginAsync("me@example.com", "right", CancellationToken.None);
             return new Radio(client, Audio, () => Now);
         }

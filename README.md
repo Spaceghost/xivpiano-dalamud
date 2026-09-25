@@ -34,12 +34,26 @@ from any artist, song or genre.
 - **Stays signed in if you want**: the password is encrypted for your Windows (or Wine) user with DPAPI before it
   is saved, and XivPiano can resume your last station when the game starts.
 
+## Pandora Plus and Premium
+
+A paid account streams **192 kbit/s MP3** (free accounts get 128), as it does in Elpis, pianobar and Pithos.
+XivPiano recognises a paid account from Pandora's own flags (subscriber, or no audio ads) and asks for the
+192 kbit/s stream through the ordinary Android client, the way Elpis does. When Pandora does not offer it there,
+XivPiano signs in again as the Pandora One client, the way Pithos does for subscribers, and uses that client's
+192 kbit/s stream. In *Settings*:
+
+- **Audio quality**: *best my account gets*, or *128 kbit/s* to save data.
+- **Pandora client**: *automatic* (the above), *Android* (as Elpis and pianobar), or *Pandora One* (as Pithos;
+  a free account falls back to Android).
+
+The window shows your plan, the client in use and each song's bitrate.
+
 ## Requirements
 
 - FFXIV with Dalamud (API 15), on Windows or on Linux under Wine. Songs are 128 kbit/s MP3, decoded in managed
   code ([NLayer](https://github.com/naudio/NLayer)) and played through winmm ([NAudio](https://github.com/naudio/NAudio)),
   so nothing depends on Windows codecs.
-- A Pandora account, in the United States.
+- A Pandora account (free, Plus or Premium), in the United States.
 
 ## Commands
 
