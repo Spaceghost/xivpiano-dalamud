@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/XivPiano.Core/XivPiano.Core.csproj" />
+    <Project Path="src/XivPiano.Plugin/XivPiano.Plugin.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/XivPiano.Core.Tests/XivPiano.Core.Tests.csproj" />
+  </Folder>
+</Solution>

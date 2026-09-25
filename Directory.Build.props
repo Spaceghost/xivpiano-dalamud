@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    Build outputs live outside the source tree (~/xiv-piano-build by default).
+    Set XIVPIANO_ARTIFACTS to give a concurrent build its own bin/obj tree.
+  -->
+  <PropertyGroup>
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+    <ArtifactsPath Condition="'$(XIVPIANO_ARTIFACTS)' != ''">$(XIVPIANO_ARTIFACTS)</ArtifactsPath>
+    <ArtifactsPath Condition="'$(ArtifactsPath)' == ''">$(MSBuildThisFileDirectory)../xiv-piano-build/artifacts</ArtifactsPath>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+</Project>
