@@ -226,10 +226,16 @@ public class PandoraClientTests
     public async Task AnExpiredSessionIsRenewedOnce()
     {
         var (client, server) = Make();
-        server.Answer = (_, _) => new JsonObject { ["stations"] = new JsonArray(new JsonObject
+        server.Answer = (_, _) => new JsonObject
         {
-            ["stationToken"] = "st", ["stationId"] = "s1", ["stationName"] = "Eorzean Café", ["isQuickMix"] = false,
-        }) };
+            ["stations"] = new JsonArray(new JsonObject
+            {
+                ["stationToken"] = "st",
+                ["stationId"] = "s1",
+                ["stationName"] = "Eorzean Café",
+                ["isQuickMix"] = false,
+            })
+        };
         await client.LoginAsync("me@example.com", "right", CancellationToken.None);
         server.ExpireTokenOnce = 1;
         var stations = await client.GetStationsAsync(CancellationToken.None);
@@ -362,8 +368,10 @@ public class PandoraClientTests
         var crypto = new PandoraCrypto(Partner.Android);
         var body = new JsonObject
         {
-            ["username"] = Partner.Android.Username, ["password"] = Partner.Android.Password,
-            ["deviceModel"] = Partner.Android.DeviceModel, ["version"] = "5",
+            ["username"] = Partner.Android.Username,
+            ["password"] = Partner.Android.Password,
+            ["deviceModel"] = Partner.Android.DeviceModel,
+            ["version"] = "5",
         }.ToJsonString();
         using var response = await http.PostAsync("https://tuner.pandora.com/services/json/?method=auth.partnerLogin",
             new StringContent(body, Encoding.UTF8, "text/plain"));

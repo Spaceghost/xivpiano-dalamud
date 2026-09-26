@@ -248,7 +248,7 @@ public sealed class Radio : IDisposable
         }
 
         Current = null;
-        for (var fetches = 0; ; )
+        for (var fetches = 0; ;)
         {
             queue.RemoveAll(t => t.IsStale(now()));
             if (queue.Count == 0)

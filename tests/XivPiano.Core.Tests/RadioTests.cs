@@ -67,8 +67,12 @@ public class RadioTests
                 {
                     items.Add(new JsonObject
                     {
-                        ["songName"] = $"b{Batch}s{i}", ["artistName"] = "X", ["trackToken"] = $"t{Batch}{i}", ["stationId"] = "s1",
-                        ["additionalAudioUrl"] = $"https://mp3/{Batch}/{i}", ["trackLength"] = 200,
+                        ["songName"] = $"b{Batch}s{i}",
+                        ["artistName"] = "X",
+                        ["trackToken"] = $"t{Batch}{i}",
+                        ["stationId"] = "s1",
+                        ["additionalAudioUrl"] = $"https://mp3/{Batch}/{i}",
+                        ["trackLength"] = 200,
                     });
                 }
 

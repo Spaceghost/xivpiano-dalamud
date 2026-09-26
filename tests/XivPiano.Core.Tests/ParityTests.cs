@@ -95,9 +95,12 @@ public class RadioParityTests
             }
 
             batch++;
-            return new JsonObject { ["items"] = new JsonArray(
+            return new JsonObject
+            {
+                ["items"] = new JsonArray(
                 new JsonObject { ["songName"] = $"b{batch}a", ["artistName"] = "X", ["trackToken"] = $"t{batch}a", ["stationId"] = "s1", ["additionalAudioUrl"] = "https://mp3/a" },
-                new JsonObject { ["songName"] = $"b{batch}b", ["artistName"] = "X", ["trackToken"] = $"t{batch}b", ["stationId"] = "s1", ["additionalAudioUrl"] = "https://mp3/b" }) };
+                new JsonObject { ["songName"] = $"b{batch}b", ["artistName"] = "X", ["trackToken"] = $"t{batch}b", ["stationId"] = "s1", ["additionalAudioUrl"] = "https://mp3/b" })
+            };
         };
         var client = new PandoraClient(new HttpClient(server));
         await client.LoginAsync("me@example.com", "right", CancellationToken.None);
