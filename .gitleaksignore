@@ -1,0 +1,3 @@
+# Pandora's partner passwords: public client constants, published in pianobar, Pithos and Elpis, not secrets.
+631cced95cd07a57adb244ca7dcdae05f5dd19b7:src/XivPiano.Core/Pandora/Partner.cs:generic-api-key:29
+f04b5f62af47379886f849dc360bbaa4a291c7ab:src/XivPiano.Core/Pandora/Partner.cs:generic-api-key:16
