@@ -13,7 +13,7 @@ namespace XivPiano.Plugin;
 public sealed class AudioOut(HttpClient http) : IAudioOut, IDisposable
 {
     private readonly Lock gate = new();
-    private WaveOutEvent? output;
+    private WaveOut? output;
     private MpegSampleProvider? source;
     private float volume = 0.6f;
     private bool stopping;
@@ -48,7 +48,7 @@ public sealed class AudioOut(HttpClient http) : IAudioOut, IDisposable
             throw new InvalidDataException("the audio is not an MP3 this player can read");
 
         var next = new MpegSampleProvider(mpeg, GainFactor(track.GainDb)) { Volume = volume };
-        var device = new WaveOutEvent { DesiredLatency = 200, NumberOfBuffers = 3 };
+        var device = new WaveOut { BufferMilliseconds = 200, NumberOfBuffers = 3 };
         device.Init(next);
         device.PlaybackStopped += OnStopped;
         lock (gate)
@@ -111,12 +111,17 @@ public sealed class AudioOut(HttpClient http) : IAudioOut, IDisposable
 
         public TimeSpan Duration => mpeg.Duration;
 
-        public int Read(float[] buffer, int offset, int count)
+        // NLayer decodes into an array; NAudio 3 reads into a span. One array, grown as needed, so a read allocates nothing.
+        private float[] scratch = [];
+
+        public int Read(Span<float> buffer)
         {
-            var read = mpeg.ReadSamples(buffer, offset, count);
+            if (scratch.Length < buffer.Length)
+                scratch = new float[buffer.Length];
+            var read = mpeg.ReadSamples(scratch, 0, buffer.Length);
             var scale = gain * Volume;
-            for (var i = offset; i < offset + read; i++)
-                buffer[i] = Math.Clamp(buffer[i] * scale, -1f, 1f);
+            for (var i = 0; i < read; i++)
+                buffer[i] = Math.Clamp(scratch[i] * scale, -1f, 1f);
             return read;
         }
 
