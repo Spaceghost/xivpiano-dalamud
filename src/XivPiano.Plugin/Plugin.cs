@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Keys;
 using Dalamud.Game.Command;
 using Dalamud.Game.Config;
 using Dalamud.Game.Gui.Dtr;
@@ -29,6 +30,11 @@ public sealed class Plugin : IDalamudPlugin
     private readonly IGameConfig gameConfig;
     private readonly IFramework framework;
     private readonly IDtrBar dtrBar;
+    private readonly IToastGui toasts;
+    private readonly IKeyState keys;
+    private readonly ScrobbleRule scrobbleRule = new();
+    private readonly Dictionary<VirtualKey, bool> keysDown = [];
+    private DateTimeOffset songStarted;
     private readonly WindowSystem windows = new("XivPiano");
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(60) };
     private readonly CancellationTokenSource cts = new();
@@ -42,8 +48,10 @@ public sealed class Plugin : IDalamudPlugin
     private string? announcedToken;
 
     public Plugin(IDalamudPluginInterface pi, IPluginLog log, ICommandManager commands, IChatGui chat, ICondition condition,
-        IGameConfig gameConfig, IFramework framework, IDtrBar dtrBar, ITextureProvider textures)
+        IGameConfig gameConfig, IFramework framework, IDtrBar dtrBar, ITextureProvider textures, IToastGui toasts, IKeyState keys)
     {
+        this.toasts = toasts;
+        this.keys = keys;
         this.pi = pi;
         this.log = log;
         this.commands = commands;
@@ -61,6 +69,8 @@ public sealed class Plugin : IDalamudPlugin
 
         window = new MainWindow(this, textures, http);
         windows.AddWindow(window);
+        StationWindow = new StationWindow(this);
+        windows.AddWindow(StationWindow);
         pi.UiBuilder.Draw += windows.Draw;
         pi.UiBuilder.OpenMainUi += ToggleWindow;
         pi.UiBuilder.OpenConfigUi += ToggleWindow;
@@ -86,6 +96,13 @@ public sealed class Plugin : IDalamudPlugin
     public AudioOut Audio { get; }
 
     public Radio? Radio { get; private set; }
+
+    public StationWindow StationWindow { get; }
+
+    /// <summary>Pandora's explicit content filter, read after sign-in; null until known.</summary>
+    public bool? ExplicitFilter { get; private set; }
+
+    public HttpClient Http => http;
 
     public bool SigningIn { get; private set; }
 
@@ -131,6 +148,15 @@ public sealed class Plugin : IDalamudPlugin
                 Radio.Changed += OnRadioChanged;
                 await Radio.LoadStationsAsync(ct).ConfigureAwait(false);
                 log.Information("Signed in to Pandora ({Kind}, {Client} client); {Count} stations", account.IsPaid ? "paid" : "free", account.Client, Radio.Stations.Count);
+                try
+                {
+                    ExplicitFilter = await Pandora.GetExplicitFilterAsync(ct).ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is PandoraException or HttpRequestException)
+                {
+                    ExplicitFilter = null; // shown as unknown; nothing else depends on it
+                }
+
                 if (resume && Radio.Stations.FirstOrDefault(s => s.Id == Config.LastStationId) is { } last)
                     await Radio.PlayStationAsync(last, ct).ConfigureAwait(false);
             }
@@ -143,6 +169,43 @@ public sealed class Plugin : IDalamudPlugin
                 SigningIn = false;
             }
         });
+    }
+
+    public void SetExplicitFilter(bool enabled) =>
+        Run(async ct =>
+        {
+            await Pandora.SetExplicitFilterAsync(enabled, ct).ConfigureAwait(false);
+            ExplicitFilter = enabled;
+        });
+
+    /// <summary>The scrobblers that are switched on and set up.</summary>
+    public IReadOnlyList<IScrobbler> Scrobblers()
+    {
+        var list = new List<IScrobbler>();
+        if (Config.ScrobbleToLastFm && Config.LastFmApiKey.Length > 0 && Secrets.Unprotect(Config.ProtectedLastFmSecret) is { } secret
+            && Secrets.Unprotect(Config.ProtectedLastFmSession) is { } session)
+            list.Add(new LastFm(http, Config.LastFmApiKey, secret, session));
+        if (Config.ScrobbleToListenBrainz && Secrets.Unprotect(Config.ProtectedListenBrainzToken) is { } token)
+            list.Add(new ListenBrainz(http, token));
+        return list;
+    }
+
+    private void Report(Func<IScrobbler, Task> call)
+    {
+        foreach (var scrobbler in Scrobblers())
+        {
+            Run(async _ =>
+            {
+                try
+                {
+                    await call(scrobbler).ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is HttpRequestException or InvalidOperationException or FormatException or TaskCanceledException)
+                {
+                    log.Warning("{Name}: {Message}", scrobbler.Name, e.Message);
+                }
+            });
+        }
     }
 
     public void SignOut()
@@ -204,8 +267,30 @@ public sealed class Plugin : IDalamudPlugin
         if (track != null && track.Token != announcedToken)
         {
             announcedToken = track.Token;
+            songStarted = DateTimeOffset.UtcNow;
             if (Config.AnnounceInChat)
                 chat.Print(new SeStringBuilder().AddUiForeground($"♪ {track.Title}", 45).AddText($" by {track.Artist}").Build(), "XivPiano");
+            if (Config.ToastOnNewSong)
+                toasts.ShowNormal($"♪ {track.Title} — {track.Artist}");
+            var nowPlaying = track;
+            Report(s => s.NowPlayingAsync(nowPlaying, CancellationToken.None));
+        }
+
+        // A listen counts after half the song or four minutes (the Last.fm rule), once per play.
+        if (track != null && scrobbleRule.Due(track, Audio.Position))
+        {
+            var (done, started) = (track, songStarted);
+            Report(s => s.ScrobbleAsync(done, started, CancellationToken.None));
+        }
+
+        if (Config.MediaKeys && radio != null)
+        {
+            if (Pressed(VirtualKey.MEDIA_PLAY_PAUSE))
+                radio.TogglePause();
+            if (Pressed(VirtualKey.MEDIA_NEXT_TRACK))
+                Run(ct => radio.NextAsync(ct));
+            if (Pressed(VirtualKey.MEDIA_STOP))
+                radio.Stop();
         }
 
         UpdateDtr(track, playing);
@@ -239,6 +324,15 @@ public sealed class Plugin : IDalamudPlugin
             dtr.Text = text;
             dtr.Tooltip = $"{track.Title} by {track.Artist}\nClick: XivPiano. Right-click: {(playing ? "pause" : "play")}.";
         }
+    }
+
+    /// <summary>A key that went down since the last frame (held keys do not repeat).</summary>
+    private bool Pressed(VirtualKey key)
+    {
+        var down = keys.IsVirtualKeyValid(key) && keys[key];
+        var was = keysDown.GetValueOrDefault(key);
+        keysDown[key] = down;
+        return down && !was;
     }
 
     private static string Shorten(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
@@ -286,16 +380,16 @@ public sealed class Plugin : IDalamudPlugin
             case "play" or "pause":
                 return true; // already so
             case "next" or "skip":
-                Run(radio.NextAsync);
+                Run(ct => radio.NextAsync(ct));
                 return true;
             case "love" or "like":
-                Run(radio.LoveAsync);
+                Run(ct => radio.LoveAsync(ct));
                 return true;
             case "ban":
-                Run(radio.BanAsync);
+                Run(ct => radio.BanAsync(ct));
                 return true;
             case "tired":
-                Run(radio.TiredAsync);
+                Run(ct => radio.TiredAsync(ct));
                 return true;
             case "stop":
                 radio.Stop();

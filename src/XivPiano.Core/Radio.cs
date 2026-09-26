@@ -101,46 +101,121 @@ public sealed class Radio : IDisposable
         Changed?.Invoke();
     }
 
-    /// <summary>Thumbs up: Pandora plays more like it.</summary>
-    public async Task LoveAsync(CancellationToken ct) =>
+    /// <summary>Thumbs up: Pandora plays more like it. Any song from the history, or the one playing.</summary>
+    public async Task LoveAsync(CancellationToken ct, Track? track = null) =>
         await Guard("Loving it", async () =>
         {
-            if (Current is not { } t || Station is not { } s)
+            if ((track ?? Current) is not { } t)
                 return;
-            await pandora.AddFeedbackAsync(s.Token, t.Token, true, ct).ConfigureAwait(false);
-            Current = t with { Loved = true };
+            await pandora.AddFeedbackAsync(await OwnedStationTokenAsync(t, ct).ConfigureAwait(false), t.Token, true, ct).ConfigureAwait(false);
+            Remark(t, t with { Loved = true });
         }).ConfigureAwait(false);
 
-    /// <summary>Thumbs down: never on this station again, and skipped now.</summary>
-    public async Task BanAsync(CancellationToken ct) =>
+    /// <summary>Thumbs down: never on this station again; the song playing is skipped too.</summary>
+    public async Task BanAsync(CancellationToken ct, Track? track = null) =>
         await Guard("Banning it", async () =>
         {
-            if (Current is not { } t || Station is not { } s)
+            if ((track ?? Current) is not { } t)
                 return;
-            await pandora.AddFeedbackAsync(s.Token, t.Token, false, ct).ConfigureAwait(false);
-            await AdvanceAsync(ct).ConfigureAwait(false);
+            await pandora.AddFeedbackAsync(await OwnedStationTokenAsync(t, ct).ConfigureAwait(false), t.Token, false, ct).ConfigureAwait(false);
+            Remark(t, t with { Loved = false, Banned = true });
+            if (t.Token == Current?.Token)
+                await AdvanceAsync(ct).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
-    /// <summary>Tired of it: not played for a month on any station, and skipped now.</summary>
-    public async Task TiredAsync(CancellationToken ct) =>
+    /// <summary>Tired of it: not played for a month on any station; the song playing is skipped too.</summary>
+    public async Task TiredAsync(CancellationToken ct, Track? track = null) =>
         await Guard("Shelving it for a month", async () =>
         {
-            if (Current is not { } t)
+            if ((track ?? Current) is not { } t)
                 return;
             await pandora.SleepSongAsync(t.Token, ct).ConfigureAwait(false);
-            await AdvanceAsync(ct).ConfigureAwait(false);
+            if (t.Token == Current?.Token)
+                await AdvanceAsync(ct).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
-    public async Task BookmarkAsync(bool artist, CancellationToken ct) =>
+    public async Task BookmarkAsync(bool artist, CancellationToken ct, Track? track = null) =>
         await Guard(artist ? "Bookmarking the artist" : "Bookmarking the song", async () =>
         {
-            if (Current is not { } t)
+            if ((track ?? Current) is not { } t)
                 return;
             if (artist)
                 await pandora.BookmarkArtistAsync(t.Token, ct).ConfigureAwait(false);
             else
                 await pandora.BookmarkSongAsync(t.Token, ct).ConfigureAwait(false);
         }).ConfigureAwait(false);
+
+    /// <summary>
+    /// The station a song's feedback goes to: the one it came from (on Shuffle that is the mixed-in station, not
+    /// Shuffle). A station shared with you cannot take feedback until it is yours, so it is taken over first, as
+    /// pianobar does.
+    /// </summary>
+    private async Task<string> OwnedStationTokenAsync(Track t, CancellationToken ct)
+    {
+        var station = Stations.FirstOrDefault(s => s.Id == t.StationId) ?? Station
+            ?? throw new InvalidOperationException("No station to rate on.");
+        if (!station.IsShared)
+            return station.Token;
+        var own = await pandora.TransformSharedStationAsync(station, ct).ConfigureAwait(false);
+        Stations = [.. Stations.Select(s => s.Id == station.Id ? own : s)];
+        if (Station?.Id == station.Id)
+            Station = own;
+        return own.Token;
+    }
+
+    /// <summary>Updates a song where it is shown (playing now, or in the history).</summary>
+    private void Remark(Track old, Track updated)
+    {
+        if (Current?.Token == old.Token)
+            Current = updated;
+        for (var node = history.First; node != null; node = node.Next)
+        {
+            if (node.Value.Token == old.Token)
+                node.Value = updated;
+        }
+    }
+
+    public async Task RenameStationAsync(Station station, string name, CancellationToken ct) =>
+        await Guard($"Renaming {station.Name}", async () =>
+        {
+            await pandora.RenameStationAsync(station.Token, name, ct).ConfigureAwait(false);
+            var renamed = station with { Name = name };
+            Stations = [.. Stations.Select(s => s.Id == station.Id ? renamed : s)];
+            if (Station?.Id == station.Id)
+                Station = renamed;
+        }).ConfigureAwait(false);
+
+    public async Task DeleteStationAsync(Station station, CancellationToken ct) =>
+        await Guard($"Deleting {station.Name}", async () =>
+        {
+            await pandora.DeleteStationAsync(station.Token, ct).ConfigureAwait(false);
+            Stations = [.. Stations.Where(s => s.Id != station.Id)];
+            if (Station?.Id == station.Id)
+            {
+                audio.Stop();
+                Station = null;
+                Current = null;
+                queue.Clear();
+            }
+        }).ConfigureAwait(false);
+
+    /// <summary>Which stations Shuffle plays from; the next Shuffle playlist follows it.</summary>
+    public async Task SetShuffleAsync(IReadOnlyCollection<string> stationIds, CancellationToken ct) =>
+        await Guard("Choosing what Shuffle mixes", async () =>
+        {
+            await pandora.SetQuickMixAsync(stationIds, ct).ConfigureAwait(false);
+            Stations = [.. Stations.Select(s => s.IsQuickMix ? s with { QuickMixIds = [.. stationIds] } : s)];
+            if (Station?.IsQuickMix == true)
+                queue.Clear(); // the songs already queued came from the old mix
+        }).ConfigureAwait(false);
+
+    /// <summary>Runs one station-management call through the gate, so its errors show like any other.</summary>
+    public async Task<T?> DoAsync<T>(string what, Func<Task<T>> action) where T : class
+    {
+        T? result = null;
+        await Guard(what, async () => result = await action().ConfigureAwait(false)).ConfigureAwait(false);
+        return result;
+    }
 
     public Task<string> ExplainAsync(CancellationToken ct) =>
         Current is { } t ? pandora.ExplainAsync(t.Token, ct) : Task.FromResult("Nothing is playing.");

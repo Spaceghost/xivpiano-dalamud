@@ -28,6 +28,12 @@ from any artist, song or genre.
 - **Play / pause, next song, thumbs up, thumbs down** (also skips), **tired of it** (not for a month, on any
   station), **bookmark** the song (right-click: the artist), and **why this song?** in Pandora's own words.
 - **New stations** from a search (artist, song or genre), or from the song or artist that is playing.
+- **Manage stations** (right-click one): rename, delete, in or out of **Shuffle**, and its **seeds, thumbs and
+  modes**: add variety, remove a seed, take back a thumb, switch Pandora's station modes. Sort A to Z.
+- **History** of the last 20 songs, each still rateable and bookmarkable; **Up next**; **Open on Pandora**; Pandora's
+  **genre stations** to browse.
+- **Scrobbling** to **Last.fm** (your own free API key) and **ListenBrainz** (your user token).
+- **Toasts** for new songs, the keyboard's **media keys**, and Pandora's **explicit content filter**.
 - **The song in the server info bar**: click opens XivPiano, right-click pauses.
 - **Plays nicely with the game**: mutes the game's background music while a song plays and puts it back as it was,
   pauses during cutscenes and resumes after, and can say each new song in chat.

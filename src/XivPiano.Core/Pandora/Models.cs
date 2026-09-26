@@ -1,6 +1,23 @@
 namespace XivPiano.Core.Pandora;
 
-public sealed record Station(string Token, string Id, string Name, bool IsQuickMix, bool IsShared);
+/// <summary>A station. On the Shuffle (QuickMix) station, <see cref="QuickMixIds"/> are the stations it mixes.</summary>
+public sealed record Station(string Token, string Id, string Name, bool IsQuickMix, bool IsShared)
+{
+    public IReadOnlyList<string> QuickMixIds { get; init; } = [];
+}
+
+/// <summary>What a station is built from: a song, an artist or a genre (<see cref="SeedId"/> removes it).</summary>
+public sealed record Seed(string SeedId, SearchKind Kind, string Name, string? Artist);
+
+/// <summary>A thumb you gave on a station (<see cref="FeedbackId"/> takes it back).</summary>
+public sealed record Feedback(string FeedbackId, string Title, string Artist, bool Positive);
+
+public sealed record StationDetails(Station Station, IReadOnlyList<Seed> Seeds, IReadOnlyList<Feedback> Feedback);
+
+/// <summary>A Pandora station mode ("My Station", "Crowd Faves", "Deep Cuts", ...).</summary>
+public sealed record StationMode(int Id, string Name, string Description, bool Active);
+
+public sealed record GenreCategory(string Name, IReadOnlyList<Station> Stations);
 
 /// <summary>One song of a playlist. Audio URLs expire about an hour after the playlist was fetched.</summary>
 public sealed record Track(
@@ -19,6 +36,9 @@ public sealed record Track(
     string? DetailUrl,
     DateTimeOffset FetchedAt)
 {
+    /// <summary>Thumbed down in this session (it is not played again on the station).</summary>
+    public bool Banned { get; init; }
+
     /// <summary>Pandora's audio links stop working about an hour after the playlist call; skip past older ones.</summary>
     public static readonly TimeSpan UrlLifetime = TimeSpan.FromMinutes(55);
 

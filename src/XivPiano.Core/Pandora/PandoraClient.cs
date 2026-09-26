@@ -122,13 +122,119 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
         var result = await CallAsync("user.getStationList", new JsonObject { ["includeStationArtUrl"] = false }, ct).ConfigureAwait(false);
         return (result["stations"] as JsonArray ?? [])
             .OfType<JsonObject>()
-            .Select(s => new Station(
-                Str(s, "stationToken"),
-                Str(s, "stationId"),
-                Str(s, "stationName"),
-                s["isQuickMix"]?.GetValue<bool>() ?? false,
-                s["isShared"]?.GetValue<bool>() ?? false))
+            .Select(ParseStation)
             .ToList();
+    }
+
+    private static Station ParseStation(JsonObject s) =>
+        new(Str(s, "stationToken"), Str(s, "stationId"), Str(s, "stationName"),
+            s["isQuickMix"]?.GetValue<bool>() ?? false, s["isShared"]?.GetValue<bool>() ?? false)
+        {
+            QuickMixIds = (s["quickMixStationIds"] as JsonArray ?? []).Select(x => x?.GetValue<string>()).OfType<string>().ToList(),
+        };
+
+    /// <summary>A station's seeds and the thumbs you gave on it.</summary>
+    public async Task<StationDetails> GetStationDetailsAsync(Station station, CancellationToken ct)
+    {
+        var r = await CallAsync("station.getStation", new JsonObject
+        {
+            ["stationToken"] = station.Token,
+            ["includeExtendedAttributes"] = true,
+        }, ct).ConfigureAwait(false);
+        var seeds = new List<Seed>();
+        var music = r["music"] as JsonObject;
+        foreach (var x in (music?["songs"] as JsonArray ?? []).OfType<JsonObject>())
+            seeds.Add(new Seed(Str(x, "seedId"), SearchKind.Song, Str(x, "songName"), x["artistName"]?.GetValue<string>()));
+        foreach (var x in (music?["artists"] as JsonArray ?? []).OfType<JsonObject>())
+            seeds.Add(new Seed(Str(x, "seedId"), SearchKind.Artist, Str(x, "artistName"), null));
+        foreach (var x in (music?["genres"] as JsonArray ?? []).OfType<JsonObject>())
+            seeds.Add(new Seed(Str(x, "seedId"), SearchKind.Genre, x["genreName"]?.GetValue<string>() ?? x["stationName"]?.GetValue<string>() ?? "Genre", null));
+        var feedback = new List<Feedback>();
+        var fb = r["feedback"] as JsonObject;
+        foreach (var (key, positive) in new[] { ("thumbsUp", true), ("thumbsDown", false) })
+        {
+            foreach (var x in (fb?[key] as JsonArray ?? []).OfType<JsonObject>())
+                feedback.Add(new Feedback(Str(x, "feedbackId"), Str(x, "songName"), x["artistName"]?.GetValue<string>() ?? "", x["isPositive"]?.GetValue<bool>() ?? positive));
+        }
+
+        return new StationDetails(station, seeds, feedback);
+    }
+
+    /// <summary>Adds variety: another song or artist (a search result's music token) as a seed.</summary>
+    public async Task AddSeedAsync(Station station, string musicToken, CancellationToken ct)
+    {
+        await OwnAsync(station, ct).ConfigureAwait(false);
+        await CallAsync("station.addMusic", new JsonObject { ["stationToken"] = station.Token, ["musicToken"] = musicToken }, ct).ConfigureAwait(false);
+    }
+
+    public Task DeleteSeedAsync(string seedId, CancellationToken ct) =>
+        CallAsync("station.deleteMusic", new JsonObject { ["seedId"] = seedId }, ct);
+
+    public Task DeleteFeedbackAsync(string feedbackId, CancellationToken ct) =>
+        CallAsync("station.deleteFeedback", new JsonObject { ["feedbackId"] = feedbackId }, ct);
+
+    /// <summary>Pandora's genre stations, by category; making one uses its token as the music token.</summary>
+    public async Task<IReadOnlyList<GenreCategory>> GetGenreStationsAsync(CancellationToken ct)
+    {
+        var r = await CallAsync("station.getGenreStations", [], ct).ConfigureAwait(false);
+        return (r["categories"] as JsonArray ?? []).OfType<JsonObject>()
+            .Select(c => new GenreCategory(
+                c["categoryName"]?.GetValue<string>() ?? "",
+                (c["stations"] as JsonArray ?? []).OfType<JsonObject>()
+                    .Select(s => new Station(Str(s, "stationToken"), s["stationId"]?.GetValue<string>() ?? Str(s, "stationToken"), Str(s, "stationName"), false, false))
+                    .ToList()))
+            .ToList();
+    }
+
+    /// <summary>Which of your stations Shuffle (QuickMix) plays from.</summary>
+    public Task SetQuickMixAsync(IEnumerable<string> stationIds, CancellationToken ct) =>
+        CallAsync("user.setQuickMix", new JsonObject { ["quickMixStationIds"] = new JsonArray([.. stationIds.Select(id => (JsonNode?)id)]) }, ct);
+
+    /// <summary>A station shared with you becomes your own copy, which your thumbs and seeds can change.</summary>
+    public async Task<Station> TransformSharedStationAsync(Station station, CancellationToken ct)
+    {
+        var r = await CallAsync("station.transformSharedStation", new JsonObject { ["stationToken"] = station.Token }, ct).ConfigureAwait(false);
+        return r["stationToken"] != null ? ParseStation(r) : station with { IsShared = false };
+    }
+
+    /// <summary>Ratings and seeds cannot change a station shared with you, so it is made yours first (as pianobar does).</summary>
+    private async Task OwnAsync(Station station, CancellationToken ct)
+    {
+        if (station.IsShared)
+            await TransformSharedStationAsync(station, ct).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<StationMode>> GetStationModesAsync(Station station, CancellationToken ct) =>
+        ParseModes(await CallAsync("interactiveradio.v1.getAvailableModesSimple", new JsonObject { ["stationId"] = station.Id }, ct).ConfigureAwait(false));
+
+    public async Task<IReadOnlyList<StationMode>> SetStationModeAsync(Station station, int modeId, CancellationToken ct) =>
+        ParseModes(await CallAsync("interactiveradio.v1.setAndGetAvailableModes", new JsonObject { ["stationId"] = station.Id, ["modeId"] = modeId }, ct).ConfigureAwait(false));
+
+    private static List<StationMode> ParseModes(JsonObject r)
+    {
+        var current = r["currentModeId"]?.GetValue<int>() ?? -1;
+        return (r["availableModes"] as JsonArray ?? []).OfType<JsonObject>()
+            .Select(m => new StationMode(m["modeId"]?.GetValue<int>() ?? 0, m["modeName"]?.GetValue<string>() ?? "",
+                m["modeDescription"]?.GetValue<string>() ?? "", (m["modeId"]?.GetValue<int>() ?? 0) == current))
+            .ToList();
+    }
+
+    /// <summary>Pandora's explicit content filter for the account.</summary>
+    public async Task<bool> GetExplicitFilterAsync(CancellationToken ct) =>
+        (await CallAsync("user.getSettings", [], ct).ConfigureAwait(false))["isExplicitContentFilterEnabled"]?.GetValue<bool>() ?? false;
+
+    /// <summary>Changing a setting needs the account's email and password again, as pianobar sends them.</summary>
+    public async Task SetExplicitFilterAsync(bool enabled, CancellationToken ct)
+    {
+        if (credentials is not { } c)
+            throw new InvalidOperationException("Sign in again to change settings.");
+        await CallAsync("user.changeSettings", new JsonObject
+        {
+            ["userInitiatedChange"] = true,
+            ["currentUsername"] = c.Email,
+            ["currentPassword"] = c.Password,
+            ["isExplicitContentFilterEnabled"] = enabled,
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>The extra MP3 formats to ask for: 192 kbit/s only exists for paid accounts.</summary>

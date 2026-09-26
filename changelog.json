@@ -23,6 +23,22 @@
     },
     {
      "status": "beta",
+     "text": "Your stations, managed as in pianobar, Pithos and Elpis: right-click a station to rename it, delete it (after asking), put it in or take it out of Shuffle, or open its seeds, thumbs and modes. There you can add variety (another artist or song), remove a seed, take back a thumb, and switch Pandora's station modes (*Deep Cuts*, *Discovery* and the like, where your account has them). Shuffle's own menu chooses all its stations at once. A station shared with you becomes your own copy the first time you change it, as pianobar does. Stations can be listed A to Z."
+    },
+    {
+     "status": "beta",
+     "text": "*History* lists the last 20 songs, each with thumbs up and down, *tired of it* and bookmarks, without skipping what is playing. *Up next* shows the songs Pandora has queued. *Open on Pandora* opens a song's page. *New station* adds Pandora's genre stations to browse."
+    },
+    {
+     "status": "beta",
+     "text": "Scrobbling to Last.fm (with your own free API key, connected in the browser once) and to ListenBrainz (your user token), by Last.fm's rule: songs over 30 seconds, after half their length or four minutes. Now-playing is sent too."
+    },
+    {
+     "status": "beta",
+     "text": "A toast for each new song, the keyboard's media keys (play/pause, next, stop), and Pandora's explicit content filter in *Settings*."
+    },
+    {
+     "status": "beta",
      "text": "The song in the server info bar (click opens XivPiano, right-click pauses), `/piano play|pause|next|love|ban|tired|stop` and `/piano station <name>` for chat and macros, and IPC for other plugins (`XivPiano.NowPlaying`, `XivPiano.Control`)."
     },
     {

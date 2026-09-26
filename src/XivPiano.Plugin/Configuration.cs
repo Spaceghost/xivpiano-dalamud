@@ -39,5 +39,29 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Show the song in the server info bar (click: open, right-click: pause).</summary>
     public bool ShowInServerInfoBar { get; set; } = true;
 
+    /// <summary>List stations A to Z (else in Pandora's order, newest first).</summary>
+    public bool SortStationsByName { get; set; } = true;
+
+    /// <summary>A toast for each new song, like Pithos' desktop notifications.</summary>
+    public bool ToastOnNewSong { get; set; }
+
+    /// <summary>Play/pause, next and stop from the keyboard's media keys while the game has focus.</summary>
+    public bool MediaKeys { get; set; } = true;
+
+    public bool ScrobbleToLastFm { get; set; }
+
+    /// <summary>Your own Last.fm API account (last.fm/api): the key, and the secret encrypted like the password.</summary>
+    public string LastFmApiKey { get; set; } = "";
+
+    public string ProtectedLastFmSecret { get; set; } = "";
+
+    /// <summary>The session Last.fm issues after you approve XivPiano, encrypted.</summary>
+    public string ProtectedLastFmSession { get; set; } = "";
+
+    public bool ScrobbleToListenBrainz { get; set; }
+
+    /// <summary>Your ListenBrainz user token, encrypted.</summary>
+    public string ProtectedListenBrainzToken { get; set; } = "";
+
     public void Clamp() => Volume = Math.Clamp(Volume, 0f, 1f);
 }
