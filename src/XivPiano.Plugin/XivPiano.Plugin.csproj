@@ -13,6 +13,6 @@
     <!-- Sound out through winmm (Wine maps it to PulseAudio/PipeWire), and MP3 decoding in managed code:
          no Windows codec is involved, so it plays the same under Wine as on Windows. Both MIT. -->
     <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
-    <PackageReference Include="NLayer" Version="1.16.0" />
+    <PackageReference Include="NLayer" Version="3.0.0" />
   </ItemGroup>
 </Project>
