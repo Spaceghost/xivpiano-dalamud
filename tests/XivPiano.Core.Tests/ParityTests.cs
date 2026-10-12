@@ -17,6 +17,73 @@ public class StationManagementTests
     }
 
     [Fact]
+    public async Task FailedSeedPreservesAdoptionAndRetryUsesOwnedTokenWithoutRetransform()
+    {
+        bool failSeed = true;
+        var (client, server) = await SignedInAsync((method, _) => method switch
+        {
+            "user.getStationList" => JsonNode.Parse("""{"stations":[{"stationToken":"theirs","stationId":"s9","stationName":"Mix","isShared":true}]}""")!,
+            "station.transformSharedStation" => JsonNode.Parse("""{"stationToken":"mine","stationId":"owned9","stationName":"Mix","isShared":false}""")!,
+            "station.addMusic" when failSeed => throw new HttpRequestException("synthetic seed failure"),
+            _ => new JsonObject(),
+        });
+        using var radio = new Radio(client, new FakeAudio());
+        await radio.LoadStationsAsync(CancellationToken.None);
+        var shared = Assert.Single(radio.Stations);
+        Assert.Null(await radio.AddSeedAsync(shared, "R123", CancellationToken.None));
+        Assert.Contains("synthetic seed failure", radio.Error);
+        Assert.Equal("mine", Assert.Single(radio.Stations).Token);
+        Assert.False(radio.Stations[0].IsShared);
+        Assert.Equal("owned9", radio.ResolveStation(shared)!.Id);
+        Assert.Null(radio.ResolveStation(shared with { Id = "missing" }));
+        failSeed = false;
+        var own = await radio.AddSeedAsync(shared, "R123", CancellationToken.None);
+        Assert.Equal("owned9", own!.Id);
+        Assert.Null(radio.Error);
+        Assert.Single(server.Calls, call => call.Method == "station.transformSharedStation");
+        Assert.All(server.Calls.Where(call => call.Method == "station.addMusic"), call =>
+            Assert.Equal("mine", call.Body["stationToken"]!.GetValue<string>()));
+        var calls = server.Calls.Count;
+        Assert.Null(await radio.AddSeedAsync(shared with { Id = "missing" }, "R123", CancellationToken.None));
+        Assert.Equal(calls, server.Calls.Count);
+    }
+
+    [Fact]
+    public async Task ExplicitAdoptionReplacesTokenAndDoesNotTransformTwice()
+    {
+        var (client, server) = await SignedInAsync((method, _) => method switch
+        {
+            "user.getStationList" => JsonNode.Parse("""{"stations":[{"stationToken":"theirs","stationId":"s9","stationName":"Friend mix","isShared":true}]}""")!,
+            "station.transformSharedStation" => JsonNode.Parse("""{"stationToken":"mine","stationId":"owned9","stationName":"Friend mix","isShared":false}""")!,
+            "station.getPlaylist" => JsonNode.Parse("""{"items":[{"songName":"A","artistName":"X","trackToken":"a","stationId":"s9","additionalAudioUrl":"https://mp3/a","trackLength":200},{"songName":"B","artistName":"X","trackToken":"b","stationId":"s9","additionalAudioUrl":"https://mp3/b","trackLength":200}]}""")!,
+            _ => new JsonObject(),
+        });
+        using var radio = new Radio(client, new FakeAudio(), () => DateTimeOffset.FromUnixTimeSeconds(1_790_223_000));
+        await radio.LoadStationsAsync(CancellationToken.None);
+        var shared = Assert.Single(radio.Stations);
+        await radio.PlayStationAsync(shared, CancellationToken.None);
+        await radio.NextAsync(CancellationToken.None);
+        await radio.AdoptStationAsync(shared, CancellationToken.None);
+        Assert.Equal("mine", Assert.Single(radio.Stations).Token);
+        Assert.False(radio.Stations[0].IsShared);
+        Assert.Equal("owned9", radio.Station!.Id);
+        Assert.Equal("owned9", radio.Current!.StationId);
+        Assert.All(radio.History, t => Assert.Equal("owned9", t.StationId));
+        Assert.All(radio.Upcoming, t => Assert.Equal("owned9", t.StationId));
+        await radio.AdoptStationAsync(shared, CancellationToken.None);
+        Assert.Single(server.Calls, c => c.Method == "station.transformSharedStation");
+        for (int i = 0; i < 3; i++) await radio.NextAsync(CancellationToken.None);
+        Assert.Equal("owned9", radio.Current!.StationId);
+        Assert.All(radio.Upcoming, t => Assert.Equal("owned9", t.StationId));
+        Assert.Equal("mine", server.Calls.Last(c => c.Method == "station.getPlaylist").Body["stationToken"]!.GetValue<string>());
+        await radio.PlayStationAsync(shared, CancellationToken.None);
+        Assert.Equal("owned9", radio.Station!.Id);
+        Assert.Equal("owned9", radio.Current!.StationId);
+        Assert.Equal("mine", server.Calls.Last(c => c.Method == "station.getPlaylist").Body["stationToken"]!.GetValue<string>());
+        Assert.Null(radio.Error);
+    }
+
+    [Fact]
     public async Task StationDetailsListSeedsAndThumbs()
     {
         var (client, _) = await SignedInAsync((_, _) => JsonNode.Parse("""
@@ -39,6 +106,7 @@ public class StationManagementTests
         await client.AddSeedAsync(new Station("theirs", "s9", "Friend's mix", false, true), "R123", CancellationToken.None);
         Assert.Equal(["station.transformSharedStation", "station.addMusic"], server.Calls.Skip(2).Select(c => c.Method).ToArray());
         Assert.Equal("R123", server.Calls[^1].Body["musicToken"]!.GetValue<string>());
+        Assert.Equal("mine", server.Calls[^1].Body["stationToken"]!.GetValue<string>());
     }
 
     [Fact]

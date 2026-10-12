@@ -32,7 +32,8 @@ public sealed class MainWindow : Window, IDisposable
     private IReadOnlyList<SearchResult> results = [];
     private Task<IReadOnlyList<GenreCategory>>? loadingGenres;
     private IReadOnlyList<GenreCategory>? genres;
-    private string? explanation;
+    private Task<string>? explanation;
+    private readonly Dictionary<string, Task<string>> historyExplanations = [];
     private string? explainedToken;
 
     private Station? renaming;
@@ -182,7 +183,7 @@ public sealed class MainWindow : Window, IDisposable
             if (filter.Length > 0 && !s.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
                 continue;
             var mark = !s.IsQuickMix && shuffle?.QuickMixIds.Contains(s.Id) == true ? " ·" : "";
-            var label = s.IsQuickMix ? $"{s.Name} (shuffle)" : s.Name + mark;
+            var label = s.IsQuickMix ? $"{s.Name} (shuffle)" : s.Name + (s.IsShared ? " (shared)" : "") + mark;
             if (ImGui.Selectable($"{label}##{s.Id}", radio.Station?.Id == s.Id))
                 plugin.Run(ct => radio.PlayStationAsync(s, ct));
             if (ImGui.IsItemHovered() && mark.Length > 0)
@@ -214,6 +215,8 @@ public sealed class MainWindow : Window, IDisposable
             return;
         }
 
+        if (s.IsShared && ImGui.MenuItem("Make it mine"))
+            plugin.Run(ct => radio.AdoptStationAsync(s, ct));
         if (ImGui.MenuItem("Seeds, thumbs and modes…"))
             plugin.StationWindow.Show(s);
         if (shuffle != null)
@@ -369,14 +372,14 @@ public sealed class MainWindow : Window, IDisposable
         if (radio.Error is { } error)
             ImGui.TextColored(ImGuiColors.DalamudOrange, error);
         if (t != null && explainedToken == t.Token && explanation != null)
-            ImGui.TextWrapped(explanation);
+            DrawExplanation(explanation);
     }
 
     private void DrawControls(Radio radio, Track? t)
     {
         ImGui.BeginDisabled(t == null);
         if (ImGuiComponents.IconButton(radio.Playing ? FontAwesomeIcon.Pause : FontAwesomeIcon.Play))
-            radio.TogglePause();
+            plugin.TogglePlayback();
         Tip(radio.Playing ? "Pause" : "Play");
         ImGui.SameLine();
         if (ImGuiComponents.IconButton(FontAwesomeIcon.StepForward))
@@ -388,8 +391,7 @@ public sealed class MainWindow : Window, IDisposable
         if (ImGuiComponents.IconButton(FontAwesomeIcon.QuestionCircle) && t != null)
         {
             explainedToken = t.Token;
-            explanation = "Asking Pandora…";
-            plugin.Run(async ct => explanation = await radio.ExplainAsync(ct).ConfigureAwait(false));
+            explanation = radio.ExplainAsync(cts.Token, t);
         }
 
         Tip("Why this song?");
@@ -397,6 +399,10 @@ public sealed class MainWindow : Window, IDisposable
         if (ImGuiComponents.IconButton(FontAwesomeIcon.ExternalLinkAlt) && t?.DetailUrl is { } url)
             Util.OpenLink(url);
         Tip("Open on Pandora");
+        ImGui.SameLine();
+        if (ImGuiComponents.IconButton(FontAwesomeIcon.Copy) && t != null)
+            ImGui.SetClipboardText(SongShare.Format(t.Title, t.Artist, t.DetailUrl));
+        Tip("Copy song and Pandora link. Choose your chat channel before pasting; nothing is sent automatically.");
         ImGui.EndDisabled();
 
         var volume = plugin.Config.Volume;
@@ -404,7 +410,7 @@ public sealed class MainWindow : Window, IDisposable
         if (ImGui.SliderFloat("Volume", ref volume, 0f, 1f, $"{volume * 100:0}%%"))
         {
             plugin.Config.Volume = volume;
-            plugin.Audio.Volume = volume;
+
         }
 
         if (ImGui.IsItemDeactivatedAfterEdit())
@@ -445,6 +451,9 @@ public sealed class MainWindow : Window, IDisposable
             return;
         }
 
+        var retained = radio.History.Select(t => t.Token).ToHashSet();
+        foreach (var token in historyExplanations.Keys.Where(token => !retained.Contains(token)).ToList())
+            historyExplanations.Remove(token);
         foreach (var t in radio.History)
         {
             SongActions(radio, t, "h" + t.Token);
@@ -452,12 +461,30 @@ public sealed class MainWindow : Window, IDisposable
             ImGui.TextUnformatted(t.Title);
             ImGui.SameLine();
             ImGui.TextDisabled($"— {t.Artist}");
+            ImGui.SameLine();
+            bool pending = historyExplanations.TryGetValue(t.Token, out var why) && !why.IsCompleted;
+            ImGui.BeginDisabled(pending);
+            if (ImGui.SmallButton($"Why this song?##why{t.Token}"))
+                historyExplanations[t.Token] = radio.ExplainAsync(cts.Token, t);
+            ImGui.EndDisabled();
+            if (historyExplanations.TryGetValue(t.Token, out why)) DrawExplanation(why);
             if (t.DetailUrl is { } url)
             {
                 ImGui.SameLine();
                 if (ImGui.SmallButton($"Pandora##l{t.Token}"))
                     Util.OpenLink(url);
             }
+        }
+    }
+
+    private static void DrawExplanation(Task<string> request)
+    {
+        if (!request.IsCompleted) ImGui.TextDisabled("Asking Pandora…");
+        else if (request.IsCompletedSuccessfully) ImGui.TextWrapped(request.Result);
+        else
+        {
+            _ = request.Exception;
+            ImGui.TextDisabled("Explanation unavailable. Try again.");
         }
     }
 
@@ -610,7 +637,29 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.Separator();
         changed |= Check("List stations A to Z", c.SortStationsByName, v => c.SortStationsByName = v);
         changed |= Check("Mute the game's music while a song plays", c.MuteGameMusic, v => c.MuteGameMusic = v);
+        changed |= Check("Lower radio volume during dialogue", c.DuckDialogue, v => c.DuckDialogue = v);
+        if (c.DuckDialogue)
+        {
+            var duck = c.DuckTo;
+            if (ImGui.SliderFloat("Dialogue volume fraction", ref duck, 0f, 1f, "%.2f"))
+            { c.DuckTo = duck; changed = true; }
+            ImGui.TextDisabled("Applies to every Talk window, including silent dialogue.");
+        }
         changed |= Check("Pause during cutscenes", c.PauseInCutscenes, v => c.PauseInCutscenes = v);
+        if (ImGui.TreeNode("Let the game's music play in selected duties"))
+        {
+            foreach (var dutyType in plugin.DutyMusicTypes)
+            {
+                bool selected = c.GameMusicDutyTypes.Contains(dutyType.Id);
+                if (ImGui.Checkbox(dutyType.Name + "##music-duty" + dutyType.Id, ref selected))
+                {
+                    if (selected) c.GameMusicDutyTypes.Add(dutyType.Id); else c.GameMusicDutyTypes.Remove(dutyType.Id);
+                    changed = true;
+                }
+            }
+            ImGui.TextDisabled("Pauses the radio for the whole duty and resumes after all automatic pause reasons end.");
+            ImGui.TreePop();
+        }
         changed |= Check("Say each new song in chat", c.AnnounceInChat, v => c.AnnounceInChat = v);
         changed |= Check("A toast for each new song", c.ToastOnNewSong, v => c.ToastOnNewSong = v);
         changed |= Check("Show the song in the server info bar", c.ShowInServerInfoBar, v => c.ShowInServerInfoBar = v);
