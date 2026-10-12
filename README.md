@@ -24,7 +24,7 @@ from any artist, song or genre.
 ## What you get
 
 - **Your stations**, with a filter, and **Shuffle** where your account has it.
-- **Now playing**: album art, title, artist, album, a progress bar and the station.
+- **Now playing**: album art, title, artist, album, a progress bar and the station. The Copy button copies a song line and public Pandora link; choose a restricted chat channel before pasting. It never sends chat.
 - **Play / pause, next song, thumbs up, thumbs down** (also skips), **tired of it** (not for a month, on any
   station), **bookmark** the song (right-click: the artist), and **why this song?** in Pandora's own words.
 - **New stations** from a search (artist, song or genre), or from the song or artist that is playing.
@@ -34,7 +34,10 @@ from any artist, song or genre.
   **genre stations** to browse.
 - **Scrobbling** to **Last.fm** (your own free API key) and **ListenBrainz** (your user token).
 - **Toasts** for new songs, the keyboard's **media keys**, and Pandora's **explicit content filter**.
+- **Song-change IPC** for other plugins, alongside the existing Now Playing and playback-control gates. See [IPC contract](docs/IPC.md).
 - **The song in the server info bar**: click opens XivPiano, right-click pauses.
+- **Duty music priority**: select duty types where the radio pauses for the game’s music; cutscene and duty pause reasons wait for each other before resuming.
+- **Dialogue volume**: opt-in lowering while a Talk window is open, with an adjustable fraction and a short fade back to your current volume.
 - **Plays nicely with the game**: mutes the game's background music while a song plays and puts it back as it was,
   pauses during cutscenes and resumes after, and can say each new song in chat.
 - **Stays signed in if you want**: the password is encrypted for your Windows (or Wine) user with DPAPI before it

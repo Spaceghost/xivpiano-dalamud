@@ -85,6 +85,20 @@ public class RadioTests
     }
 
     [Fact]
+    public async Task ExplanationTargetsSelectedHistoryInsteadOfCurrentTrack()
+    {
+        var w = new World();
+        using var radio = await w.RadioAsync();
+        await radio.PlayStationAsync(Cafe, CancellationToken.None);
+        await radio.NextAsync(CancellationToken.None);
+        var past = Assert.Single(radio.History);
+        await radio.ExplainAsync(CancellationToken.None, past);
+        Assert.Equal(past.Token, w.Feedback.Last().Body["trackToken"]!.GetValue<string>());
+        await radio.ExplainAsync(CancellationToken.None);
+        Assert.Equal(radio.Current!.Token, w.Feedback.Last().Body["trackToken"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task PlaysAStationAndKeepsASongInHand()
     {
         var w = new World();

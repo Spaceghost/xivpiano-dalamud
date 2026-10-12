@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using Dalamud.Game.Addon.Lifecycle;
+using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using System.Text.Json;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Keys;
@@ -32,6 +35,11 @@ public sealed class Plugin : IDalamudPlugin
     private readonly IDtrBar dtrBar;
     private readonly IToastGui toasts;
     private readonly IKeyState keys;
+    private readonly IAddonLifecycle addonLifecycle;
+    private readonly IGameGui gameGui;
+    private readonly DialogueVolume dialogueVolume = new();
+    private bool talking;
+    private long lastVolumeTick = Stopwatch.GetTimestamp();
     private readonly ScrobbleRule scrobbleRule = new();
     private readonly Dictionary<VirtualKey, bool> keysDown = [];
     private DateTimeOffset songStarted;
@@ -40,16 +48,27 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CancellationTokenSource cts = new();
     private readonly MainWindow window;
     private readonly ICallGateProvider<string> nowPlayingGate;
+    private readonly ICallGateProvider<string> audioFeaturesGate;
+    private static readonly JsonSerializerOptions AudioFeatureJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private readonly ICallGateProvider<string, object> songChangedGate;
     private readonly ICallGateProvider<string, bool> controlGate;
     private IDtrBarEntry? dtr;
 
     private bool? musicWasMuted; // the game's own BGM setting before we muted it; null = we did not
-    private bool pausedForCutscene;
+    private readonly AutomaticPause automaticPause = new();
+    private readonly IClientState clientState;
+    private readonly IDataManager data;
     private string? announcedToken;
 
     public Plugin(IDalamudPluginInterface pi, IPluginLog log, ICommandManager commands, IChatGui chat, ICondition condition,
-        IGameConfig gameConfig, IFramework framework, IDtrBar dtrBar, ITextureProvider textures, IToastGui toasts, IKeyState keys)
+        IGameConfig gameConfig, IFramework framework, IDtrBar dtrBar, ITextureProvider textures, IToastGui toasts, IKeyState keys, IAddonLifecycle addonLifecycle, IGameGui gameGui, IClientState clientState, IDataManager data)
     {
+        this.clientState = clientState;
+        this.data = data;
+        this.gameGui = gameGui;
+        this.addonLifecycle = addonLifecycle;
+        addonLifecycle.RegisterListener(AddonEvent.PostSetup, "Talk", OnTalk);
+        addonLifecycle.RegisterListener(AddonEvent.PreFinalize, "Talk", OnTalk);
         this.toasts = toasts;
         this.keys = keys;
         this.pi = pi;
@@ -82,12 +101,19 @@ public sealed class Plugin : IDalamudPlugin
 
         nowPlayingGate = pi.GetIpcProvider<string>("XivPiano.NowPlaying");
         nowPlayingGate.RegisterFunc(NowPlayingJson);
+        audioFeaturesGate = pi.GetIpcProvider<string>("XivPiano.AudioFeatures.v1");
+        audioFeaturesGate.RegisterFunc(() => JsonSerializer.Serialize(Audio.ReadFeatures(), AudioFeatureJson));
+        songChangedGate = pi.GetIpcProvider<string, object>("XivPiano.SongChanged");
         controlGate = pi.GetIpcProvider<string, bool>("XivPiano.Control");
         controlGate.RegisterFunc(action => Control(action));
 
         if (Config.AutoStart && Config.Email.Length > 0 && Secrets.Unprotect(Config.ProtectedPassword) is { } saved)
             SignIn(Config.Email, saved, resume: true);
     }
+
+    public IEnumerable<(uint Id, string Name)> DutyMusicTypes => data.GetExcelSheet<Lumina.Excel.Sheets.ContentType>()!
+        .Where(row => row.RowId != 0 && !string.IsNullOrWhiteSpace(row.Name.ToString()))
+        .Select(row => (row.RowId, row.Name.ToString()));
 
     public Configuration Config { get; }
 
@@ -210,9 +236,11 @@ public sealed class Plugin : IDalamudPlugin
 
     public void SignOut()
     {
+        StationWindow.ResetView();
         Radio?.Stop();
         Radio?.Dispose();
         Radio = null;
+        automaticPause.Reset();
         Pandora.Logout();
         Config.ProtectedPassword = "";
         SaveConfig();
@@ -229,26 +257,40 @@ public sealed class Plugin : IDalamudPlugin
 
     // ---- every frame: server info bar, cutscenes, game music, announcements -----------------------
 
+    private void OnTalk(AddonEvent kind, AddonArgs args) => talking = kind == AddonEvent.PostSetup;
+
     private void OnUpdate(IFramework _)
     {
+        var tick = Stopwatch.GetTimestamp();
+        var elapsed = Stopwatch.GetElapsedTime(lastVolumeTick, tick).TotalSeconds;
+        lastVolumeTick = tick;
+        // Reconcile visibility on the framework thread: reload may miss PostSetup,
+        // and a hidden Talk window can remain allocated without PreFinalize.
+        // No addon pointer is cached or touched while changing areas.
+        bool loading = condition[ConditionFlag.BetweenAreas] || condition[ConditionFlag.BetweenAreas51];
+        if (Config.DuckDialogue && !loading)
+        {
+            var talk = gameGui.GetAddonByName("Talk");
+            talking = !talk.IsNull && talk.IsReady && talk.IsVisible;
+        }
+        else talking = false;
+        var dialogueGain = dialogueVolume.Update(Config.Volume, Config.DuckDialogue, talking, Config.DuckTo, elapsed);
         var radio = Radio;
         var track = radio?.Current;
 
-        if (Config.PauseInCutscenes && radio != null)
+        bool cutscene = Config.PauseInCutscenes && (condition[ConditionFlag.WatchingCutscene]
+            || condition[ConditionFlag.WatchingCutscene78] || condition[ConditionFlag.OccupiedInCutSceneEvent]);
+        bool dutyMusic = false;
+        if (!loading && Config.GameMusicDutyTypes.Count > 0 && clientState.IsLoggedIn
+            && (condition[ConditionFlag.BoundByDuty] || condition[ConditionFlag.BoundByDuty56] || condition[ConditionFlag.BoundByDuty95]))
         {
-            var cutscene = condition[ConditionFlag.WatchingCutscene] || condition[ConditionFlag.WatchingCutscene78] || condition[ConditionFlag.OccupiedInCutSceneEvent];
-            if (cutscene && radio.Playing)
-            {
-                radio.TogglePause();
-                pausedForCutscene = true;
-            }
-            else if (!cutscene && pausedForCutscene)
-            {
-                pausedForCutscene = false;
-                if (!radio.Playing)
-                    radio.TogglePause();
-            }
+            var territory = data.GetExcelSheet<Lumina.Excel.Sheets.TerritoryType>()?.GetRowOrDefault(clientState.TerritoryType);
+            var contentType = territory?.ContentFinderCondition.Value.ContentType.RowId ?? 0;
+            dutyMusic = contentType != 0 && Config.GameMusicDutyTypes.Contains(contentType);
         }
+        var pauseAction = automaticPause.Update(cutscene || dutyMusic, track != null, radio?.Playing == true, deferResume: loading, elapsedSeconds: elapsed);
+        Audio.Volume = dialogueGain * automaticPause.Gain;
+        if (pauseAction != PauseAction.None) radio?.TogglePause();
 
         // The game's music is muted only while a song actually plays, and put back as it was.
         var playing = radio?.Playing == true;
@@ -267,6 +309,9 @@ public sealed class Plugin : IDalamudPlugin
         if (track != null && track.Token != announcedToken)
         {
             announcedToken = track.Token;
+            // Same snapshot contract as the polling gate. Subscribers must return quickly.
+            try { songChangedGate.SendMessage(NowPlayingJson()); }
+            catch (Exception e) { log.Warning(e, "A XivPiano.SongChanged subscriber failed"); }
             songStarted = DateTimeOffset.UtcNow;
             if (Config.AnnounceInChat)
                 chat.Print(new SeStringBuilder().AddUiForeground($"♪ {track.Title}", 45).AddText($" by {track.Artist}").Build(), "XivPiano");
@@ -275,6 +320,8 @@ public sealed class Plugin : IDalamudPlugin
             var nowPlaying = track;
             Report(s => s.NowPlayingAsync(nowPlaying, CancellationToken.None));
         }
+
+        if (track is null) announcedToken = null;
 
         // A listen counts after half the song or four minutes (the Last.fm rule), once per play.
         if (track != null && scrobbleRule.Due(track, Audio.Position))
@@ -286,7 +333,7 @@ public sealed class Plugin : IDalamudPlugin
         if (Config.MediaKeys && radio != null)
         {
             if (Pressed(VirtualKey.MEDIA_PLAY_PAUSE))
-                radio.TogglePause();
+                TogglePlayback();
             if (Pressed(VirtualKey.MEDIA_NEXT_TRACK))
                 Run(ct => radio.NextAsync(ct));
             if (Pressed(VirtualKey.MEDIA_STOP))
@@ -311,7 +358,7 @@ public sealed class Plugin : IDalamudPlugin
             dtr.OnClick = e =>
             {
                 if (e.ClickType == MouseClickType.Right)
-                    Radio?.TogglePause();
+                    TogglePlayback();
                 else
                     ToggleWindow();
             };
@@ -363,6 +410,13 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>play, pause, toggle, next, love, ban, tired, stop. False when unknown or not signed in.</summary>
+    public void TogglePlayback()
+    {
+        if (Radio?.Current is null) return;
+        automaticPause.ManualChange();
+        Radio.TogglePause();
+    }
+
     public bool Control(string action)
     {
         if (Radio is not { } radio)
@@ -372,12 +426,13 @@ public sealed class Plugin : IDalamudPlugin
             case "play" when !radio.Playing && radio.Current != null:
             case "pause" when radio.Playing:
             case "toggle":
-                radio.TogglePause();
+                TogglePlayback();
                 return true;
             case "play" when radio.Current == null && radio.Station is { } s:
                 Run(ct => radio.PlayStationAsync(s, ct));
                 return true;
             case "play" or "pause":
+                automaticPause.ManualChange();
                 return true; // already so
             case "next" or "skip":
                 Run(ct => radio.NextAsync(ct));
@@ -418,7 +473,10 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         framework.Update -= OnUpdate;
+        addonLifecycle.UnregisterListener(AddonEvent.PostSetup, "Talk", OnTalk);
+        addonLifecycle.UnregisterListener(AddonEvent.PreFinalize, "Talk", OnTalk);
         nowPlayingGate.UnregisterFunc();
+        audioFeaturesGate.UnregisterFunc();
         controlGate.UnregisterFunc();
         commands.RemoveHandler(Command);
         pi.UiBuilder.Draw -= windows.Draw;
