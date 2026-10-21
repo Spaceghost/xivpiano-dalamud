@@ -179,5 +179,6 @@ jobs:
             native/build/clang/linux-x64/bridge-smoke.log
             native/build/asan/bridge-smoke.log
             native/build/managed-windows/managed-smoke.log
+            native/build/managed-windows/managed-proof.json
           if-no-files-found: error
           retention-days: 30

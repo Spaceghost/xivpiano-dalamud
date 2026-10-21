@@ -1,4 +1,10 @@
 {
+  "build_tools_sha256": {
+    "tools/build-melodica.sh": "aa21655acc31284560d9c7eaaeb758746345b316f9271757232f18c13a7c0d88",
+    "tools/test-melodica-managed-windows.sh": "58c88ecddd1ff4396bf3c65e6830973ad319bd453d9ab5a43ade576750e8f097",
+    "tools/test-melodica-native.sh": "e7b19bbdac8f87cde863edbeff69dd70275fa91129862d2a20e164f04761965c",
+    "tools/test-melodica-sanitizers.sh": "a19998c81181d3888faed415550ae63b3c0e295a1734f917bda393332a868f8c"
+  },
   "deployment_dll_sha256": {
     "packaged_dll": "aa8e0c8b52e0c84a6eb0b2ef90b650421b7952d9b330fbbd8462bcca0912da39",
     "plugin_output_dll": "aa8e0c8b52e0c84a6eb0b2ef90b650421b7952d9b330fbbd8462bcca0912da39",
@@ -8,11 +14,17 @@
   "expected_windows_dll_sha256": "aa8e0c8b52e0c84a6eb0b2ef90b650421b7952d9b330fbbd8462bcca0912da39",
   "log_sha256": {
     "package": "a9545bc2dc9a283fd25dc41b08858dbd32fe5f7a1ffa130edfb85baf36544fc7",
-    "plugin": "ea23f07690d4bd33496de3e8e572402438eeb621612bcdc05e1b9551251ff22a",
-    "windows": "0b8e26b366a3e0b4f41899a594bd26fdc754b1690f2af1d18ef852bfb34eb44c"
+    "plugin": "45986acd74a3b6ca5acb6bd007619daae3423b698bac580f1f056596fc3454c2",
+    "windows": "e00cdd5ea3ba003adf980ea52a8db6cad1a5f6e44263ec0f2ca1077899fecf03"
   },
+  "managed_proof_sha256": "bd370463ced289bd9874a3497dce8e8c4663ffa32ace9eb3d5344e52b6d7a951",
   "measurement": "native/build/artifacts-all.json",
-  "native_smoke_checks_per_platform": 1279,
+  "native_environment_override": false,
+  "native_smoke_checks": {
+    "asan": 1279,
+    "linux": 1279,
+    "windows": 1279
+  },
   "package_entries": [
     "NAudio.Core.dll",
     "NAudio.Midi.dll",
@@ -27,7 +39,7 @@
     "licenses/melodica/THIRD_PARTY_NOTICES.md",
     "runtimes/win-x64/native/xivpiano_melodica.dll"
   ],
-  "package_sha256": "e6fe129bf26281c8f4bc436ae9e1e115a0a70ea9e70f13a5e061095a725db1e3",
+  "package_sha256": "c89f866a8e30bbca50ee9c8974225180d295df45b556c066abb49d7b59a63c26",
   "plugin_build": {
     "errors": 0,
     "warnings": 0
@@ -61,9 +73,9 @@
     "src/XivPiano.Core/DialogueVolume.cs": "ec451ec80c0fe45e89d1f58d7cfe4d74cb50d8016af18b05342a067a30d6a4f2",
     "src/XivPiano.Core/Pandora/Blowfish.cs": "b7bf9578b4fe7b62cec2a0d8afc2cfac515f905a51dd9fdc6e9b7955979c6db9",
     "src/XivPiano.Core/Pandora/BlowfishTables.cs": "467c9ccc9f641c2243937e800e108a8ac9b47366636f593666873604b1cdb18d",
-    "src/XivPiano.Core/Pandora/MelodicaProtocol.cs": "0190804acb7c421cbe6adbb7c48bf7c024abfb3f59b1e2608b04c08fc331b212",
+    "src/XivPiano.Core/Pandora/MelodicaProtocol.cs": "ed59233582dca07b53dae556ea7146ce46f88fde1fe7f620269d59242da6904e",
     "src/XivPiano.Core/Pandora/Models.cs": "68ea34ecad35f0a7055b2fd6280cfc61b3c3bca38f3bbb905e5803c3221e94d4",
-    "src/XivPiano.Core/Pandora/PandoraClient.cs": "654214c19449b03fbb1da20844b2ce33e287abee53cf4c427f60a4506588e444",
+    "src/XivPiano.Core/Pandora/PandoraClient.cs": "92106249f0ac8492558f5118b98051381505f3d525b8ba6fb1a83697c1a3f9fb",
     "src/XivPiano.Core/Pandora/Partner.cs": "6601464b0aabd30bf2a98c407af4b91440b337e56d7f6d00651a5c92277bb17a",
     "src/XivPiano.Core/Radio.cs": "863207b04a1c79a3a1be8f6c6f30a5309e4a6a50e78348183b66749ed1be89cc",
     "src/XivPiano.Core/Scrobbling.cs": "363e20deb9c4681304d0e954e4fd102e113fe7ac67f8b4ce3792578c2d7e1ecd",
@@ -72,13 +84,14 @@
     "src/XivPiano.Plugin/AudioOut.cs": "5d85b52d4f0ef90816f9cdbd29556587f7d433d085874a48325ced6d342bdfc6",
     "src/XivPiano.Plugin/Configuration.cs": "07cc1d215bbd4207f013d4e6ab0f58e766867eb15e59820d110f2f948becc5f4",
     "src/XivPiano.Plugin/MainWindow.cs": "ee3eea38a9cd93f908b770a74cd30d289fc79eebdaa9164f508095037ca1b5c8",
-    "src/XivPiano.Plugin/Plugin.cs": "bea8d4012b6fe0312e26f756434340190c5fa519209e3051d9c95ebef4cf8cc5",
+    "src/XivPiano.Plugin/Plugin.cs": "76d6dad2643e46bd7530cb70a3229a5e650bae3b4ede20b6d88661ed53ed9c6d",
     "src/XivPiano.Plugin/Secrets.cs": "f973c52068603a4ed8b9da1cca595fe8d885bafb0a3390213e1ed0a5256abec3",
     "src/XivPiano.Plugin/StationWindow.cs": "dd7b52ce1f2e11d822474c55a5c0bf708123ae1e465557fafc702e5433b03b0f",
     "src/XivPiano.Plugin/XivPiano.Plugin.csproj": "73439aac6faae50df8c7953ba11f94073c8ba9b05032a26ef42168c8a38f0250",
     "tests/XivPiano.Core.Tests/AudioFeatureTests.cs": "dd654782146b93b18a32fa4b998ac724b411bb9973b015fb7e709a147cf275cd",
     "tests/XivPiano.Core.Tests/AutomaticPauseTests.cs": "1baa039fadd8c5c97914f04b27b0ebb0a1667bebc4765b4c1e1548abcda3832a",
     "tests/XivPiano.Core.Tests/DialogueVolumeTests.cs": "bdb99845c2069692a49509b715db75b5e0cb4eef7f81974c797b5eabc268f52f",
+    "tests/XivPiano.Core.Tests/MelodicaLoaderTests.cs": "533018cd94719c5815f6b1caa9a73655881788f89fcebff26004f1958250c95b",
     "tests/XivPiano.Core.Tests/MelodicaTests.cs": "9231c2814b603b8d6611b6aaaebe738f4c165c65b363d633df8465d7a8e583fa",
     "tests/XivPiano.Core.Tests/PandoraTests.cs": "36cc8e3f89d4cd8c3ab571cb18e0ee854341e41d4adc85c6563c5a77c71555b8",
     "tests/XivPiano.Core.Tests/ParityTests.cs": "2a4219c564ffcc5df5ad16d603eace52bf24fc5264cca8b11a5f97b7aa590179",
@@ -88,10 +101,11 @@
   },
   "vendored_melodica_commit": "7e5ed58ef53b04ea98b9e6d26cbb1d0236521ccc",
   "windows_tests": {
+    "errors": 0,
     "failed": 0,
-    "native_override": false,
-    "passed": 112,
-    "skipped_live": 1,
-    "total": 113
+    "not_run": 0,
+    "passed": 115,
+    "skipped": 1,
+    "total": 116
   }
 }

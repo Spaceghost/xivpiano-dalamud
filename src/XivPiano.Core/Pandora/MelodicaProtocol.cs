@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.Loader;
 using Microsoft.Win32.SafeHandles;
 
 namespace XivPiano.Core.Pandora;
@@ -13,15 +14,27 @@ internal sealed class MelodicaProtocol : IDisposable
 {
     private readonly SessionHandle session;
 
-    public MelodicaProtocol(Partner partner)
+    public MelodicaProtocol(Partner partner, string? nativeLibraryPath = null)
     {
-        if (Native.AbiVersion() != 1)
-            throw new NotSupportedException("The installed melodica bridge has an incompatible ABI.");
-        var pointer = Native.Create(partner.Host, partner.Username, partner.Password,
-            partner.DeviceModel, partner.DecryptKey, partner.EncryptKey);
-        if (pointer == IntPtr.Zero)
-            throw new InvalidOperationException("Could not initialize the melodica protocol session.");
-        session = new SessionHandle(pointer);
+        var lease = Native.Acquire(nativeLibraryPath);
+        IntPtr pointer = IntPtr.Zero;
+        try
+        {
+            if (Native.AbiVersion() != 1)
+                throw new NotSupportedException("The installed melodica bridge has an incompatible ABI.");
+            pointer = Native.Create(partner.Host, partner.Username, partner.Password,
+                partner.DeviceModel, partner.DecryptKey, partner.EncryptKey);
+            if (pointer == IntPtr.Zero)
+                throw new InvalidOperationException("Could not initialize the melodica protocol session.");
+            session = new SessionHandle(pointer, lease);
+            pointer = IntPtr.Zero;
+        }
+        catch
+        {
+            try { if (pointer != IntPtr.Zero) Native.Free(pointer); }
+            finally { lease.Dispose(); }
+            throw;
+        }
     }
 
     public long ServerTime => Native.ServerTime(session);
@@ -56,39 +69,181 @@ internal sealed class MelodicaProtocol : IDisposable
 
     public void Dispose() => session.Dispose();
 
+    // Observable without calling native code, including after unload is requested.
+    internal static (int Loads, int Frees, int Leases, bool Closing, string? Source, string? LoadedPath)
+        LoaderState => Native.State;
+
     private sealed class SessionHandle : SafeHandleZeroOrMinusOneIsInvalid
     {
-        public SessionHandle(IntPtr pointer) : base(ownsHandle: true) => SetHandle(pointer);
+        private readonly IDisposable moduleLease;
+
+        public SessionHandle(IntPtr pointer, IDisposable moduleLease) : base(ownsHandle: true)
+        {
+            this.moduleLease = moduleLease;
+            SetHandle(pointer);
+        }
 
         protected override bool ReleaseHandle()
         {
-            Native.Free(handle);
-            return true;
+            try
+            {
+                Native.Free(handle);
+                return true;
+            }
+            finally { moduleLease.Dispose(); }
         }
     }
 
     private static class Native
     {
         private const string Library = "xivpiano_melodica";
+        private static readonly object moduleSync = new();
+        private static IntPtr module;
+        private static string? sourcePath;
+        private static string? loadedPath;
+        private static string? shadowDirectory;
+        private static int leases;
+        private static int loads;
+        private static int frees;
+        private static bool closing;
 
-        static Native() => NativeLibrary.SetDllImportResolver(typeof(Native).Assembly, Resolve);
+        static Native()
+        {
+            NativeLibrary.SetDllImportResolver(typeof(Native).Assembly, Resolve);
+            var context = AssemblyLoadContext.GetLoadContext(typeof(Native).Assembly);
+            if (context?.IsCollectible == true)
+                context.Unloading += _ => BeginUnload();
+        }
+
+        internal static (int Loads, int Frees, int Leases, bool Closing, string? Source, string? LoadedPath) State
+        {
+            get { lock (moduleSync) return (loads, frees, leases, closing, sourcePath, loadedPath); }
+        }
+
+        internal static IDisposable Acquire(string? configuredPath)
+        {
+            lock (moduleSync)
+            {
+                if (closing)
+                    throw new ObjectDisposedException(nameof(MelodicaProtocol), "The plugin load context is unloading.");
+                if (module != IntPtr.Zero)
+                {
+                    if (!string.IsNullOrWhiteSpace(configuredPath) &&
+                        !SamePath(sourcePath!, Path.GetFullPath(configuredPath)))
+                        throw new InvalidOperationException("The native protocol module is already loaded from another path.");
+                }
+                else
+                {
+                    var path = ResolvePath(configuredPath);
+                    var context = AssemblyLoadContext.GetLoadContext(typeof(Native).Assembly);
+                    string? shadow = null;
+                    var actualPath = path;
+                    try
+                    {
+                        if (context?.IsCollectible == true)
+                        {
+                            // Dalamud loads managed assemblies from streams. Keep the
+                            // installation DLL replaceable while this context is active.
+                            shadow = Path.Combine(Path.GetTempPath(), "xivpiano-melodica-" + Guid.NewGuid().ToString("N"));
+                            Directory.CreateDirectory(shadow);
+                            actualPath = Path.Combine(shadow, Path.GetFileName(path));
+                            File.Copy(path, actualPath);
+                        }
+                        module = NativeLibrary.Load(actualPath);
+                        sourcePath = path;
+                        loadedPath = actualPath;
+                        shadowDirectory = shadow;
+                        ++loads;
+                    }
+                    catch
+                    {
+                        if (shadow != null) DeleteShadow(shadow);
+                        throw;
+                    }
+                }
+                var lease = new ModuleLease();
+                ++leases;
+                return lease;
+            }
+        }
+
+        private static bool SamePath(string left, string right) => string.Equals(left, right,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+        private static string ResolvePath(string? configuredPath)
+        {
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+                return Path.GetFullPath(configuredPath);
+            var explicitPath = Environment.GetEnvironmentVariable("XIVPIANO_MELODICA_LIBRARY");
+            if (!string.IsNullOrWhiteSpace(explicitPath))
+                return Path.GetFullPath(explicitPath);
+            var location = typeof(Native).Assembly.Location;
+            if (string.IsNullOrEmpty(location))
+                throw new InvalidOperationException("The in-memory plugin must supply its native library path from DalamudPluginInterface.AssemblyLocation.");
+            var directory = Path.GetDirectoryName(location)!;
+            return OperatingSystem.IsWindows()
+                ? Path.Combine(directory, "runtimes", "win-x64", "native", Library + ".dll")
+                : Path.Combine(directory, "lib" + Library + ".so");
+        }
+
+        private static void BeginUnload()
+        {
+            lock (moduleSync)
+            {
+                closing = true;
+                FreeIfUnused();
+            }
+        }
+
+        private static void FreeIfUnused()
+        {
+            if (!closing || leases != 0 || module == IntPtr.Zero)
+                return;
+            NativeLibrary.Free(module);
+            module = IntPtr.Zero;
+            ++frees;
+            if (shadowDirectory != null)
+            {
+                DeleteShadow(shadowDirectory);
+                shadowDirectory = null;
+            }
+        }
+
+        private static void DeleteShadow(string directory)
+        {
+            try { Directory.Delete(directory, recursive: true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        private sealed class ModuleLease : IDisposable
+        {
+            private int disposed;
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+                lock (moduleSync)
+                {
+                    --leases;
+                    FreeIfUnused();
+                }
+            }
+        }
 
         private static IntPtr Resolve(string name, Assembly assembly, DllImportSearchPath? searchPath)
         {
             if (name != Library)
                 return IntPtr.Zero;
 
-            // Explicit path for isolated host/Wine tests and developer builds.
-            // Failure is intentional: do not silently load another protocol backend.
-            var explicitPath = Environment.GetEnvironmentVariable("XIVPIANO_MELODICA_LIBRARY");
-            if (!string.IsNullOrWhiteSpace(explicitPath))
-                return NativeLibrary.Load(Path.GetFullPath(explicitPath));
-
-            var directory = Path.GetDirectoryName(assembly.Location)!;
-            var path = OperatingSystem.IsWindows()
-                ? Path.Combine(directory, "runtimes", "win-x64", "native", Library + ".dll")
-                : Path.Combine(directory, "lib" + Library + ".so");
-            return NativeLibrary.Load(path);
+            lock (moduleSync)
+            {
+                // A final SessionHandle may bind xp_session_free for the first
+                // time after Unloading. Its lease keeps this handle valid.
+                if (module == IntPtr.Zero)
+                    throw new ObjectDisposedException(nameof(MelodicaProtocol), "The native protocol module is not loaded.");
+                return module;
+            }
         }
 
         [DllImport(Library, EntryPoint = "xp_bridge_abi_version", CallingConvention = CallingConvention.Cdecl)]

@@ -1,3 +1,5 @@
 # Pandora's partner passwords: public client constants, published in pianobar, Pithos and Elpis, not secrets.
 631cced95cd07a57adb244ca7dcdae05f5dd19b7:src/XivPiano.Core/Pandora/Partner.cs:generic-api-key:29
 f04b5f62af47379886f849dc360bbaa4a291c7ab:src/XivPiano.Core/Pandora/Partner.cs:generic-api-key:16
+# Measured source-file SHA256 for Secrets.cs in deployment evidence; no credential value.
+0ba0aed9f90116e03eb19a03519abb013597f0ea:docs/evidence/melodica-integration-2026-10-21/deployment-proof.json:generic-api-key:76

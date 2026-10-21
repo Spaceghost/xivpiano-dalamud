@@ -9,7 +9,7 @@ namespace XivPiano.Core.Pandora;
 /// Native code constructs and validates protocol transactions; HttpClient owns HTTPS
 /// and the managed models retain application metadata outside the historical ABI.
 /// </summary>
-public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock = null) : IDisposable
+public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock = null, string? nativeLibraryPath = null) : IDisposable
 {
     private readonly Func<DateTimeOffset> now = clock ?? (() => DateTimeOffset.UtcNow);
     private readonly SemaphoreSlim loginGate = new(1, 1);
@@ -613,7 +613,7 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
                 if (method == "auth.partnerLogin")
                 {
                     protocol?.Dispose();
-                    protocol = new MelodicaProtocol(partner);
+                    protocol = new MelodicaProtocol(partner, nativeLibraryPath);
                     Interlocked.Exchange(ref resetProtocol, 0);
                 }
             }

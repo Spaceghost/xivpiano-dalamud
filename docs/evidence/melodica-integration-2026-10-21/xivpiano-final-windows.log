@@ -12,4 +12,5 @@ Required Windows x64 bridge, licenses and pinned provenance verified
       set XIVPIANO_LIVE=1 to call Pandora
   Finished:    XivPiano.Core.Tests (ID = '1d58bab17ef5f437beb64bf396c7f6ef8cae258f21c7f50e01defb5153a2e54d')
 === TEST EXECUTION SUMMARY ===
-   XivPiano.Core.Tests  Total: 113, Errors: 0, Failed: 0, Skipped: 1, Not Run: 0, Time: 0.414s
+   XivPiano.Core.Tests  Total: 116, Errors: 0, Failed: 0, Skipped: 1, Not Run: 0, Time: 0.443s
+Windows managed proof: {"errors": 0, "failed": 0, "not_run": 0, "passed": 115, "skipped": 1, "total": 116}

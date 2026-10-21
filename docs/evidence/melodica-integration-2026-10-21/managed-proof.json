@@ -1,0 +1,15 @@
+{
+  "deployment_dll_sha256": "aa8e0c8b52e0c84a6eb0b2ef90b650421b7952d9b330fbbd8462bcca0912da39",
+  "native_environment_override": false,
+  "runtime": "win-x64",
+  "self_contained": true,
+  "test_log_sha256": "1924bf3c54a127720e7bea6ba86b039cbd4a5adea2ee3a451878c1a6b1dd60e5",
+  "tests": {
+    "errors": 0,
+    "failed": 0,
+    "not_run": 0,
+    "passed": 115,
+    "skipped": 1,
+    "total": 116
+  }
+}

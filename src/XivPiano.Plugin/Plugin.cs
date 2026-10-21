@@ -83,7 +83,13 @@ public sealed class Plugin : IDalamudPlugin
         Config = pi.GetPluginConfig() as Configuration ?? new Configuration();
         Config.Clamp();
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"XivPiano/{typeof(Plugin).Assembly.GetName().Version?.ToString(3)}");
-        Pandora = new PandoraClient(http) { Quality = Config.Quality, ClientChoice = Config.Client };
+        var nativeLibraryPath = Path.Combine(pi.AssemblyLocation.DirectoryName!,
+            "runtimes", "win-x64", "native", "xivpiano_melodica.dll");
+        Pandora = new PandoraClient(http, nativeLibraryPath: nativeLibraryPath)
+        {
+            Quality = Config.Quality,
+            ClientChoice = Config.Client,
+        };
         Audio = new AudioOut(http) { Volume = Config.Volume };
 
         window = new MainWindow(this, textures, http);

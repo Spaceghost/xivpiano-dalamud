@@ -66,6 +66,15 @@ Windows and Wine. The Linux `.so` is for host-side managed tests. Both expose
 the same ten `xp_*` C ABI functions. The C protocol backend requires no json-c
 or libgcrypt DLLs.
 
+Dalamud loads managed dependencies from memory, so `Assembly.Location` is not
+an installation path. The plugin supplies the DLL's absolute path using
+`IDalamudPluginInterface.AssemblyLocation`. A collectible load context uses its
+own private native shadow copy, allowing the installed DLL to be replaced.
+The resolver caches one module handle per Core load context. Session leases
+keep it alive through asynchronous requests and SafeHandle cleanup; an unload
+request releases the module after its last session closes. Ordinary sign-out
+releases a session while the active context keeps its cached module.
+
 `tests/bridge_smoke.c` dynamically links the actual bridge. It covers partner
 and user login, every RPC mapping, retained options, repeated output ownership,
 identity mismatch, pending-operation rejection, abort, malformed responses and
