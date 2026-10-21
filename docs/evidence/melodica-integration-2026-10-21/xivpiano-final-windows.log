@@ -1,0 +1,15 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  XivPiano.Core -> /work/xivpiano-integration/native/build/managed-artifacts/bin/XivPiano.Core/release/XivPiano.Core.dll
+  XivPiano.Core.Tests -> /work/xivpiano-integration/native/build/managed-artifacts/bin/XivPiano.Core.Tests/release_win-x64/XivPiano.Core.Tests.dll
+  XivPiano.Core.Tests -> /work/xivpiano-integration/native/build/managed-windows/publish/
+Required Windows x64 bridge, licenses and pinned provenance verified
+Required Windows x64 bridge, licenses and pinned provenance verified
+  Discovering: XivPiano.Core.Tests
+  Discovered:  XivPiano.Core.Tests
+  Starting:    XivPiano.Core.Tests
+    XivPiano.Core.Tests.PandoraClientTests.LivePartnerLogin [SKIP]
+      set XIVPIANO_LIVE=1 to call Pandora
+  Finished:    XivPiano.Core.Tests (ID = '1d58bab17ef5f437beb64bf396c7f6ef8cae258f21c7f50e01defb5153a2e54d')
+=== TEST EXECUTION SUMMARY ===
+   XivPiano.Core.Tests  Total: 113, Errors: 0, Failed: 0, Skipped: 1, Not Run: 0, Time: 0.414s

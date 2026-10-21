@@ -1,0 +1,5 @@
+All four commands exited successfully without changes:
+dotnet format whitespace src/XivPiano.Core/XivPiano.Core.csproj --verify-no-changes --no-restore
+dotnet format style src/XivPiano.Core/XivPiano.Core.csproj --verify-no-changes --no-restore --severity warn
+dotnet format whitespace tests/XivPiano.Core.Tests/XivPiano.Core.Tests.csproj --verify-no-changes --no-restore
+dotnet format style tests/XivPiano.Core.Tests/XivPiano.Core.Tests.csproj --verify-no-changes --no-restore --severity warn

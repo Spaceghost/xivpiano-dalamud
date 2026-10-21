@@ -1,0 +1,28 @@
+{
+  "commit": "7e5ed58ef53b04ea98b9e6d26cbb1d0236521ccc",
+  "files": {
+    "LICENSE.libpiano": "43dc445c04ca288c8aacd452d7872ab565e0aa77c6c37efc4547f968c5bd7d2e",
+    "THIRD_PARTY_NOTICES.md": "00c7963dce69704bd0bc6c01175953d6152cf96d97198ad5b9548c6de4dc339b",
+    "compat/blowfish.c": "02ebecb96c88ff81da8ca202d8f3f2a25cce824e29acbfe2ac70126e2b0ae269",
+    "compat/blowfish.h": "ecd10d0adcdef1c029d4379f10b1cce8a9535b9ec5de1b7db87faccb020f0c90",
+    "compat/blowfish_pi.h": "50a169cf6a674a3cff18dd8fdde1e3b3dc96be3c7b7177d80b232e2448de6cd4",
+    "compat/crypt.c": "de1262f99590133d8a8afab46a6a2dcf0e4ca2ca3af46b296a9e2e40619dcc58",
+    "compat/crypt.h": "7916dbdef4faea5fbbf6bb868be9b1181c0470c99a388ff8858b1aac60413d8c",
+    "compat/explain_bookmarks.h": "747abf1e64100d702886449b73ee99aa6c8957a04eaf7822cf73e5bbb1963155",
+    "compat/feedback.h": "3d5e8557407cf8adb857911da37d3a6d51a42f19d365848cd92aa0d6e03ef6e3",
+    "compat/json.c": "ef20385267af6b340fa562c21595ecbdfed7102cf22437d4a61def1ee41eca85",
+    "compat/json.h": "e52db1591da6a1b4f4ff036fc8e3d859f2ace7227238624134304eb8e5b4c91b",
+    "compat/piano.c": "f50203602c439c99f987ec73235bfb8f7ff735b431c9e27f3566216570459d2b",
+    "compat/piano_base.inc": "870f02d34ddacaa36b0a6720222be091f39f923cb52a0b7e1daaa1921aeb8fb7",
+    "compat/playlist.h": "5863429e0e0ecc900cb29347065144a2fd238eec18c8d14e48af2947e8e076b5",
+    "compat/quickmix_genres.h": "dff369c08f9a0b27e78afa8f5d719755cf8c948d24f353af6e5af3558bdb795a",
+    "compat/search.h": "e9b536e1b58ea1f81775211c8ff001c834c4fd4a2670f9cc7b6cd8fb45da6393",
+    "compat/seeds.h": "5c111eb4f4dc3350b62b78674bf288caeaa7f36f6a3aeb83b22beaea6fac9ae1",
+    "compat/settings.h": "8351559f026b5c1e4a1a6dda3a465c1b9b42fc65d947eda3eeca3998857342ea",
+    "compat/station_modes.h": "9497ed16a4518d3aa43955e7a45eeee1fd477cd9dd6483781c6b00f0e3372e62",
+    "compat/station_mutations.h": "ef4d77bb33eb721fecb430f922c2a39283f2796f97da55c3ebfa3b8807645d5b",
+    "include/piano.h": "0e59d10c801e97bf436c739d22b0855921951659da65e9a4cd531a283d80f07a"
+  },
+  "ref": "v1.0.0",
+  "repository": "https://github.com/Spaceghost/melodica.h"
+}

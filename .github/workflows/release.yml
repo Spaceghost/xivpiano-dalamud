@@ -55,8 +55,28 @@ jobs:
       - name: Fetch the Dalamud reference assemblies
         run: tools/fetch-dalamud.sh
 
+      - name: Install native build and headless Windows test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc clang wine64 wine xvfb xauth zip unzip
+          tools/fetch-zig.sh
+
+      - name: Native Linux and Windows DLL smoke tests
+        run: tools/test-melodica-native.sh
+
+      - name: Strict Clang and native allocation/UB checks
+        run: |
+          CC=clang XIVPIANO_NATIVE_BUILD="$PWD/native/build/clang" tools/test-melodica-native.sh --linux
+          tools/test-melodica-sanitizers.sh
+
+      - name: Native packaging regressions
+        run: python3 tools/ci/test_native_packaging.py
+
       - name: Test
         run: dotnet test tests/XivPiano.Core.Tests -c Release
+
+      - name: Windows managed tests using the extracted DLL path
+        run: tools/test-melodica-managed-windows.sh
 
       - name: Build
         run: dotnet build src/XivPiano.Plugin/XivPiano.Plugin.csproj -c Release
@@ -142,5 +162,22 @@ jobs:
         with:
           name: xivpiano-plugin-${{ github.ref_name }}
           path: ${{ github.workspace }}/release
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Keep native and Windows managed test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: melodica-tests-${{ github.ref_name }}
+          path: |
+            native/build/artifacts-*.json
+            native/build/linux-x64/exports.txt
+            native/build/linux-x64/bridge-smoke.log
+            native/build/win-x64/exports.txt
+            native/build/win-x64/bridge-smoke.log
+            native/build/clang/linux-x64/bridge-smoke.log
+            native/build/asan/bridge-smoke.log
+            native/build/managed-windows/managed-smoke.log
           if-no-files-found: error
           retention-days: 30

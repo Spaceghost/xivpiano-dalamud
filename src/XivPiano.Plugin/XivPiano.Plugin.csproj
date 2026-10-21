@@ -15,4 +15,19 @@
     <PackageReference Include="NAudio.WinMM" Version="3.1.0" />
     <PackageReference Include="NLayer" Version="3.0.0" />
   </ItemGroup>
+  <ItemGroup>
+    <MelodicaNativeInput Include="../../native/melodica_bridge.*;../../native/vendor/melodica/compat/*;../../native/vendor/melodica/include/*;../../native/vendor/melodica/SOURCE.json;../../tools/build-melodica.sh" />
+    <None Include="../../runtimes/win-x64/native/xivpiano_melodica.dll"
+          Link="runtimes/win-x64/native/xivpiano_melodica.dll"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildMelodicaWindows" BeforeTargets="PrepareForBuild"
+          Condition="!$([MSBuild]::IsOSPlatform('Windows')) and '$(DesignTimeBuild)' != 'true'"
+          Inputs="@(MelodicaNativeInput)" Outputs="$(MSBuildThisFileDirectory)../../runtimes/win-x64/native/xivpiano_melodica.dll">
+    <Exec Command="bash &quot;$(MSBuildThisFileDirectory)../../tools/build-melodica.sh&quot; --windows" />
+  </Target>
+  <Target Name="RequireMelodicaWindows" BeforeTargets="CopyFilesToOutputDirectory" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(MSBuildThisFileDirectory)../../runtimes/win-x64/native/xivpiano_melodica.dll')"
+           Text="The required Windows melodica bridge is missing. Run tools/build-melodica.sh --windows with Zig available." />
+  </Target>
 </Project>

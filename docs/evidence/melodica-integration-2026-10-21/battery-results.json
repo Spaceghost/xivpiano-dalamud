@@ -1,0 +1,32 @@
+{
+  "format": {
+    "commands": [
+      "dotnet format whitespace src/XivPiano.Core/XivPiano.Core.csproj --verify-no-changes --no-restore",
+      "dotnet format style src/XivPiano.Core/XivPiano.Core.csproj --verify-no-changes --no-restore --severity warn",
+      "dotnet format whitespace tests/XivPiano.Core.Tests/XivPiano.Core.Tests.csproj --verify-no-changes --no-restore",
+      "dotnet format style tests/XivPiano.Core.Tests/XivPiano.Core.Tests.csproj --verify-no-changes --no-restore --severity warn"
+    ],
+    "exit_code": 0,
+    "files_changed": false
+  },
+  "host": "Bak Fedora44 Incus bak:melodica-complete-20261020",
+  "licences": {
+    "exit_code": 0,
+    "forbidden": 0,
+    "packages": 16
+  },
+  "log_sha256": {
+    "format": "ecce637ad2e9ea4d75b835eb9d47f81e91a191bb12b2080e8c08317419bf6a3f",
+    "licences": "d8043370b1d51d7162b74bdd8fae9902b57466e563ab47120825f1bb7b8bb0f8",
+    "vulnerable": "616b4dc96e571bb32e68e40d4e19abdbf7df17597e1dab13e7fc7792b8d1e0f3"
+  },
+  "vulnerabilities": {
+    "exit_code": 0,
+    "projects": [
+      "src/XivPiano.Core/XivPiano.Core.csproj",
+      "tests/XivPiano.Core.Tests/XivPiano.Core.Tests.csproj"
+    ],
+    "source": "https://api.nuget.org/v3/index.json",
+    "vulnerable_packages": 0
+  }
+}

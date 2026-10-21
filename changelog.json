@@ -11,6 +11,10 @@
    "items": [
     {
      "status": "beta",
+     "text": "Pandora requests now use melodica.h's libpiano implementation through a bundled Windows x64 bridge, including on Wine. Paid-account MP3 selection, account metadata, genre search and playback controls are preserved. Sign-out cancels pending requests, and older login retries cannot replace a newer account."
+    },
+    {
+     "status": "beta",
      "text": "Copy public song text without stream URLs, account tokens or tracking parameters; receive song changes through XivPiano.SongChanged IPC."
     },
     {

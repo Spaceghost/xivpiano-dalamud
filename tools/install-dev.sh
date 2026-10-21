@@ -41,13 +41,18 @@ fi
 stage="${XIVPIANO_STAGE:-$(cd "$repo/.." && pwd -P)/xiv-piano-build/devplugin}"
 mkdir -p "$stage"
 src_dir="$(dirname "$dll")"
+python3 "$repo/tools/check-native-package.py" "$src_dir"
 # The plugin's own files, and every assembly beside them: XivPiano plays sound through NAudio and
 # decodes MP3 with NLayer, and a dev copy without them loads but cannot play.
-files=(XivPiano.json XivPiano.Core.pdb XivPiano.deps.json XivPiano.pdb)
+files=(XivPiano.json XivPiano.Core.pdb XivPiano.deps.json XivPiano.pdb
+       runtimes/win-x64/native/xivpiano_melodica.dll
+       licenses/melodica/LICENSE.libpiano licenses/melodica/THIRD_PARTY_NOTICES.md
+       licenses/melodica/SOURCE.json)
 for f in "$src_dir"/*.dll; do files+=("$(basename "$f")"); done
 for f in "${files[@]}"; do
   [[ -f "$src_dir/$f" ]] || continue
-  cp "$src_dir/$f" "$stage/.$f.tmp" && mv -f "$stage/.$f.tmp" "$stage/$f"
+  mkdir -p "$stage/$(dirname "$f")"
+  cp "$src_dir/$f" "$stage/$f.tmp" && mv -f "$stage/$f.tmp" "$stage/$f"
 done
 dll="$(readlink -f "$stage/XivPiano.dll")"
 

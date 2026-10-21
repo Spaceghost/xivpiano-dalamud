@@ -1,32 +1,38 @@
 using System.Globalization;
 using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json.Nodes;
 
 namespace XivPiano.Core.Pandora;
 
 /// <summary>
-/// Pandora's JSON API (tuner.pandora.com/services/json), as documented at 6xq.net/pandora-apidoc and used by
-/// pianobar, Pithos, Elpis and pydora. Every call is HTTPS. After the partner login, bodies are Blowfish-wrapped
-/// (see <see cref="PandoraCrypto"/>) and carry the server's clock and the user's token.
+/// Pandora account and playback policy over melodica's libpiano protocol engine.
+/// Native code constructs and validates protocol transactions; HttpClient owns HTTPS
+/// and the managed models retain application metadata outside the historical ABI.
 /// </summary>
-public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock = null)
+public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock = null) : IDisposable
 {
     private readonly Func<DateTimeOffset> now = clock ?? (() => DateTimeOffset.UtcNow);
     private readonly SemaphoreSlim loginGate = new(1, 1);
+    private readonly SemaphoreSlim protocolGate = new(1, 1);
+    private readonly CancellationTokenSource lifetime = new();
+    private readonly object sessionSync = new();
+    private MelodicaProtocol? protocol;
+    private CancellationTokenSource? activeRequest;
+    private long partnerServerTime;
+    private long sessionEpoch;
+    private long signoutEpoch;
+    private long loginIntent;
+    private int resetProtocol;
+    private int disposed;
     private Partner partner = Partner.Android;
-    private PandoraCrypto crypto = new(Partner.Android);
 
-    private string? partnerId;
-    private string? partnerAuthToken;
-    private string? userId;
     private string? userAuthToken;
     private long timeOffset;
     private (string Email, string Password)? credentials;
 
     public Account? Account { get; private set; }
 
-    public bool LoggedIn => userAuthToken != null;
+    public bool LoggedIn { get { lock (sessionSync) return userAuthToken != null; } }
 
     public AudioQuality Quality { get; set; } = AudioQuality.Best;
 
@@ -42,11 +48,20 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
     /// </summary>
     public async Task<Account> LoginAsync(string email, string password, CancellationToken ct)
     {
+        (long Signout, long Login) intent;
+        CancellationTokenSource? superseded;
+        lock (sessionSync)
+        {
+            ObjectDisposedException.ThrowIf(disposed != 0, this);
+            intent = (signoutEpoch, ++loginIntent);
+            superseded = activeRequest;
+        }
+        CancelRequest(superseded);
         if (ClientChoice == ClientChoice.PandoraOne)
         {
             try
             {
-                return await LoginAsAsync(Partner.PandoraOne, email, password, ct).ConfigureAwait(false);
+                return await LoginAsAsync(Partner.PandoraOne, email, password, ct, intent).ConfigureAwait(false);
             }
             catch (PandoraException e) when (e.Code is PandoraException.ListenerNotAuthorized or PandoraException.PartnerNotAuthorized)
             {
@@ -54,20 +69,34 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
             }
         }
 
-        return await LoginAsAsync(Partner.Android, email, password, ct).ConfigureAwait(false);
+        return await LoginAsAsync(Partner.Android, email, password, ct, intent).ConfigureAwait(false);
     }
 
     // ---- session ---------------------------------------------------------------------------------
 
-    private async Task<Account> LoginAsAsync(Partner client, string email, string password, CancellationToken ct)
+    private async Task<Account> LoginAsAsync(Partner client, string email, string password, CancellationToken ct,
+        (long Signout, long Login) intent)
     {
+        lock (sessionSync)
+        {
+            EnsureIntent(intent, ct);
+        }
         await loginGate.WaitAsync(ct).ConfigureAwait(false);
+        long attempt = -1;
         try
         {
-            partner = client;
-            crypto = new PandoraCrypto(client);
-            partnerId = partnerAuthToken = userId = userAuthToken = null;
-            Account = null;
+            CancellationTokenSource? superseded;
+            lock (sessionSync)
+            {
+                EnsureIntent(intent, ct);
+                attempt = ++sessionEpoch;
+                partner = client;
+                userAuthToken = null;
+                credentials = null;
+                Account = null;
+                superseded = activeRequest;
+            }
+            CancelRequest(superseded);
             var partnerResult = await PostAsync("auth.partnerLogin", new JsonObject
             {
                 ["username"] = partner.Username,
@@ -75,30 +104,53 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
                 ["deviceModel"] = partner.DeviceModel,
                 ["version"] = "5",
                 ["includeUrls"] = true,
-            }, encrypt: false, ct).ConfigureAwait(false);
-            partnerId = Str(partnerResult, "partnerId");
-            partnerAuthToken = Str(partnerResult, "partnerAuthToken");
-            var serverTime = crypto.DecryptSyncTime(Str(partnerResult, "syncTime"));
-            timeOffset = serverTime - now().ToUnixTimeSeconds();
+            }, ct, attempt).ConfigureAwait(false);
+            var partnerToken = Str(partnerResult, "partnerAuthToken");
+            var serverTime = partnerServerTime;
+            var offset = serverTime - now().ToUnixTimeSeconds();
 
             var user = await PostAsync("auth.userLogin", new JsonObject
             {
                 ["loginType"] = "user",
                 ["username"] = email,
                 ["password"] = password,
-                ["partnerAuthToken"] = partnerAuthToken,
-                ["syncTime"] = SyncTime(),
+                ["partnerAuthToken"] = partnerToken,
+                ["syncTime"] = now().ToUnixTimeSeconds() + offset,
                 ["returnIsSubscriber"] = true,
-            }, encrypt: true, ct).ConfigureAwait(false);
-            userId = Str(user, "userId");
-            userAuthToken = Str(user, "userAuthToken");
-            credentials = (email, password);
-            Account = new Account(
-                userId,
-                user["isSubscriber"]?.GetValue<bool>() ?? false,
-                user["hasAudioAds"]?.GetValue<bool>() ?? true,
+            }, ct, attempt).ConfigureAwait(false);
+            var id = Str(user, "userId");
+            var token = Str(user, "userAuthToken");
+            // Validate richer account metadata before committing any credentials.
+            var account = new Account(
+                id,
+                Boolean(user, "isSubscriber", false),
+                Boolean(user, "hasAudioAds", true),
                 client == Partner.PandoraOne ? "Pandora One" : "Android");
-            return Account;
+            lock (sessionSync)
+            {
+                EnsureSession(attempt, ct);
+                EnsureIntent(intent, ct);
+                timeOffset = offset;
+                userAuthToken = token;
+                credentials = (email, password);
+                Account = account;
+            }
+            return account;
+        }
+        catch
+        {
+            lock (sessionSync)
+            {
+                if (sessionEpoch == attempt)
+                {
+                    userAuthToken = null;
+                    credentials = null;
+                    Account = null;
+                    Interlocked.Exchange(ref resetProtocol, 1);
+                }
+            }
+            DisposeIdleProtocol();
+            throw;
         }
         finally
         {
@@ -108,12 +160,45 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
 
     public void Logout()
     {
-        partnerId = partnerAuthToken = userId = userAuthToken = null;
-        credentials = null;
-        Account = null;
+        (long Signout, long Login) intent;
+        CancellationTokenSource? superseded;
+        lock (sessionSync)
+        {
+            ++sessionEpoch;
+            ++signoutEpoch;
+            ++loginIntent;
+            intent = (signoutEpoch, loginIntent);
+            userAuthToken = null;
+            credentials = null;
+            Account = null;
+            Interlocked.Exchange(ref resetProtocol, 1);
+            superseded = activeRequest;
+        }
+        CancelRequest(superseded);
+        _ = DrainSignedOutProtocolAsync(intent);
     }
 
-    private long SyncTime() => now().ToUnixTimeSeconds() + timeOffset;
+    private void EnsureSession(long expectedEpoch, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(disposed != 0, this);
+        ct.ThrowIfCancellationRequested();
+        if (sessionEpoch != expectedEpoch)
+            throw new OperationCanceledException("The Pandora session changed during the request.", ct);
+    }
+
+    private void EnsureIntent((long Signout, long Login) intent, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(disposed != 0, this);
+        ct.ThrowIfCancellationRequested();
+        if (intent != (signoutEpoch, loginIntent))
+            throw new OperationCanceledException("The Pandora sign-in was superseded or signed out.", ct);
+    }
+
+    private static void CancelRequest(CancellationTokenSource? request)
+    {
+        try { request?.Cancel(); }
+        catch (ObjectDisposedException) { } // The transaction completed after the snapshot.
+    }
 
     // ---- calls -----------------------------------------------------------------------------------
 
@@ -225,15 +310,22 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
     /// <summary>Changing a setting needs the account's email and password again, as pianobar sends them.</summary>
     public async Task SetExplicitFilterAsync(bool enabled, CancellationToken ct)
     {
-        if (credentials is not { } c)
-            throw new InvalidOperationException("Sign in again to change settings.");
+        (string Email, string Password) saved;
+        long epoch;
+        lock (sessionSync)
+        {
+            if (credentials is not { } c)
+                throw new InvalidOperationException("Sign in again to change settings.");
+            saved = c;
+            epoch = sessionEpoch;
+        }
         await CallAsync("user.changeSettings", new JsonObject
         {
             ["userInitiatedChange"] = true,
-            ["currentUsername"] = c.Email,
-            ["currentPassword"] = c.Password,
+            ["currentUsername"] = saved.Email,
+            ["currentPassword"] = saved.Password,
             ["isExplicitContentFilterEnabled"] = enabled,
-        }, ct).ConfigureAwait(false);
+        }, ct, epoch).ConfigureAwait(false);
     }
 
     /// <summary>The extra MP3 formats to ask for: 192 kbit/s only exists for paid accounts.</summary>
@@ -247,28 +339,45 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
     /// </summary>
     public async Task<IReadOnlyList<Track>> GetPlaylistAsync(string stationToken, CancellationToken ct)
     {
-        var tracks = await FetchPlaylistAsync(stationToken, ct).ConfigureAwait(false);
-        if (ClientChoice == ClientChoice.Automatic && Quality == AudioQuality.Best && Account is { IsPaid: true }
-            && partner == Partner.Android && tracks.Count > 0 && tracks.All(t => t.Bitrate < 192) && credentials is { } c)
+        (long Signout, long Login) intent;
+        lock (sessionSync) intent = (signoutEpoch, loginIntent);
+        var tracks = await FetchPlaylistAsync(stationToken, ct, intent).ConfigureAwait(false);
+        Account? account;
+        Partner identity;
+        (string Email, string Password)? saved;
+        lock (sessionSync)
+        {
+            EnsureIntent(intent, ct);
+            account = Account;
+            identity = partner;
+            saved = credentials;
+        }
+        if (ClientChoice == ClientChoice.Automatic && Quality == AudioQuality.Best && account is { IsPaid: true }
+            && identity == Partner.Android && tracks.Count > 0 && tracks.All(t => t.Bitrate < 192) && saved is { } c)
         {
             try
             {
-                await LoginAsAsync(Partner.PandoraOne, c.Email, c.Password, ct).ConfigureAwait(false);
+                await LoginAsAsync(Partner.PandoraOne, c.Email, c.Password, ct, intent).ConfigureAwait(false);
             }
             catch (PandoraException)
             {
-                await LoginAsAsync(Partner.Android, c.Email, c.Password, ct).ConfigureAwait(false);
-                ClientChoice = ClientChoice.Android; // Pandora One is not for this account: stop trying
+                await LoginAsAsync(Partner.Android, c.Email, c.Password, ct, intent).ConfigureAwait(false);
+                lock (sessionSync)
+                {
+                    EnsureIntent(intent, ct);
+                    ClientChoice = ClientChoice.Android; // Pandora One is not for this account: stop trying
+                }
                 return tracks;
             }
 
-            return await FetchPlaylistAsync(stationToken, ct).ConfigureAwait(false);
+            return await FetchPlaylistAsync(stationToken, ct, intent).ConfigureAwait(false);
         }
 
         return tracks;
     }
 
-    private async Task<IReadOnlyList<Track>> FetchPlaylistAsync(string stationToken, CancellationToken ct)
+    private async Task<IReadOnlyList<Track>> FetchPlaylistAsync(string stationToken, CancellationToken ct,
+        (long Signout, long Login) intent)
     {
         var fetched = now();
         var formats = RequestedFormats();
@@ -279,7 +388,7 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
             // The clients' own streams are AAC+ (or, for Pandora One, a 192 kbit/s MP3 as high quality); these add
             // MP3s this player can decode: 128 kbit/s for every account, 192 for paid ones.
             ["additionalAudioUrl"] = string.Join(",", formats),
-        }, ct).ConfigureAwait(false);
+        }, ct, requiredIntent: intent).ConfigureAwait(false);
         var cap = Quality == AudioQuality.Standard ? 128 : int.MaxValue;
         return (result["items"] as JsonArray ?? [])
             .OfType<JsonObject>()
@@ -294,6 +403,15 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
     /// formats in order (a string for one, an array for several), and the audioUrlMap may hold an MP3 as well.
     /// </summary>
     internal static Track? ParseTrack(JsonObject i, DateTimeOffset fetched, IReadOnlyList<string>? requested = null, int capKbps = int.MaxValue)
+    {
+        try { return ParseTrackCore(i, fetched, requested, capKbps); }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentOutOfRangeException)
+        {
+            throw new FormatException("Pandora returned invalid track metadata.", e);
+        }
+    }
+
+    private static Track? ParseTrackCore(JsonObject i, DateTimeOffset fetched, IReadOnlyList<string>? requested, int capKbps)
     {
         requested ??= ["HTTP_128_MP3"];
         var candidates = new List<(string Url, int Bitrate)>();
@@ -325,6 +443,7 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
             return null; // nothing this player can decode
         var (url, encoding, bitrate) = (pick.Url, "mp3", pick.Bitrate);
         _ = double.TryParse(i["trackGain"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var gain);
+        if (!double.IsFinite(gain)) gain = 0;
         return new Track(
             Str(i, "trackToken"),
             Str(i, "stationId"),
@@ -335,7 +454,7 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
             url,
             encoding,
             bitrate,
-            TimeSpan.FromSeconds(i["trackLength"]?.GetValue<int>() ?? 0),
+            TimeSpan.FromSeconds(Math.Max(0, i["trackLength"]?.GetValue<int>() ?? 0)),
             (i["songRating"]?.GetValue<int>() ?? 0) == 1,
             gain,
             i["songDetailUrl"]?.GetValue<string>(),
@@ -430,63 +549,255 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
     // ---- transport -------------------------------------------------------------------------------
 
     /// <summary>A user call; an expired session is renewed once with the credentials of the last login.</summary>
-    private async Task<JsonObject> CallAsync(string method, JsonObject body, CancellationToken ct)
+    private async Task<JsonObject> CallAsync(string method, JsonObject body, CancellationToken ct,
+        long? requiredEpoch = null, (long Signout, long Login)? requiredIntent = null)
     {
-        if (!LoggedIn)
-            throw new InvalidOperationException("Not logged in to Pandora.");
+        var transaction = WithSession(body, requiredEpoch, requiredIntent);
         try
         {
-            return await PostAsync(method, WithSession(body), encrypt: true, ct).ConfigureAwait(false);
+            return await PostAsync(method, transaction.Body, ct, transaction.Epoch).ConfigureAwait(false);
         }
-        catch (PandoraException e) when (e.Code == PandoraException.InvalidAuthToken && credentials is { } c)
+        catch (PandoraException e) when (e.Code == PandoraException.InvalidAuthToken)
         {
-            await LoginAsAsync(partner, c.Email, c.Password, ct).ConfigureAwait(false);
-            return await PostAsync(method, WithSession(body), encrypt: true, ct).ConfigureAwait(false);
+            (string Email, string Password) saved;
+            Partner identity;
+            lock (sessionSync)
+            {
+                EnsureSession(transaction.Epoch, ct);
+                if (credentials is not { } c)
+                    throw;
+                saved = c;
+                identity = partner;
+            }
+            await LoginAsAsync(identity, saved.Email, saved.Password, ct, transaction.Intent).ConfigureAwait(false);
+            var retry = WithSession(body, requiredIntent: transaction.Intent);
+            return await PostAsync(method, retry.Body, ct, retry.Epoch).ConfigureAwait(false);
         }
     }
 
-    private JsonObject WithSession(JsonObject body)
+    private (JsonObject Body, long Epoch, (long Signout, long Login) Intent) WithSession(JsonObject body,
+        long? requiredEpoch = null, (long Signout, long Login)? requiredIntent = null)
     {
-        var copy = (JsonObject)body.DeepClone();
-        copy["userAuthToken"] = userAuthToken;
-        copy["syncTime"] = SyncTime();
-        return copy;
+        lock (sessionSync)
+        {
+            ObjectDisposedException.ThrowIf(disposed != 0, this);
+            if (requiredIntent is { } intent)
+                EnsureIntent(intent, CancellationToken.None);
+            if (requiredEpoch is { } expected && sessionEpoch != expected)
+                throw new OperationCanceledException("The Pandora session changed before the request.");
+            if (userAuthToken == null)
+                throw new InvalidOperationException("Not logged in to Pandora.");
+            var copy = (JsonObject)body.DeepClone();
+            copy["userAuthToken"] = userAuthToken;
+            copy["syncTime"] = now().ToUnixTimeSeconds() + timeOffset;
+            return (copy, sessionEpoch, (signoutEpoch, loginIntent));
+        }
     }
 
-    private async Task<JsonObject> PostAsync(string method, JsonObject body, bool encrypt, CancellationToken ct)
+    private async Task<JsonObject> PostAsync(string method, JsonObject body, CancellationToken ct, long expectedEpoch)
     {
-        var query = new StringBuilder("https://").Append(partner.Host).Append("/services/json/?method=").Append(method);
-        if (partnerId != null)
-            query.Append("&partner_id=").Append(Uri.EscapeDataString(partnerId));
-        if (userId != null)
-            query.Append("&user_id=").Append(Uri.EscapeDataString(userId));
-        if ((userAuthToken ?? partnerAuthToken) is { } token)
-            query.Append("&auth_token=").Append(Uri.EscapeDataString(token));
-
-        var json = body.ToJsonString();
-        using var content = new StringContent(encrypt ? crypto.Encrypt(json) : json, Encoding.UTF8);
-        content.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
-        using var response = await http.PostAsync(new Uri(query.ToString()), content, ct).ConfigureAwait(false);
-        var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        JsonObject answer;
+        CancellationTokenSource linked;
+        lock (sessionSync)
+        {
+            EnsureSession(expectedEpoch, ct);
+            linked = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.Token);
+        }
+        using var linkedScope = linked;
+        await protocolGate.WaitAsync(linked.Token).ConfigureAwait(false);
         try
         {
-            answer = JsonNode.Parse(text) as JsonObject ?? throw new FormatException("not an object");
-        }
-        catch (Exception e) when (e is System.Text.Json.JsonException or FormatException)
-        {
-            throw new HttpRequestException($"Pandora answered {(int)response.StatusCode} with something that is not JSON.", e);
-        }
+            lock (sessionSync)
+            {
+                EnsureSession(expectedEpoch, ct);
+                activeRequest = linked;
+                if (method == "auth.partnerLogin")
+                {
+                    protocol?.Dispose();
+                    protocol = new MelodicaProtocol(partner);
+                    Interlocked.Exchange(ref resetProtocol, 0);
+                }
+            }
+            var native = protocol ?? throw new InvalidOperationException("Initialize the Pandora partner session first.");
+            try
+            {
+                var request = native.Prepare(method, body.ToJsonString());
+                using var content = new StringContent(request.Body, System.Text.Encoding.UTF8);
+                content.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+                using var response = await http.PostAsync(request.Url, content, linked.Token).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+                var text = await response.Content.ReadAsStringAsync(linked.Token).ConfigureAwait(false);
+                lock (sessionSync) EnsureSession(expectedEpoch, ct);
+                JsonObject answer;
+                try
+                {
+                    answer = JsonNode.Parse(text) as JsonObject ?? throw new FormatException("not an object");
+                }
+                catch (Exception e) when (e is System.Text.Json.JsonException or FormatException)
+                {
+                    // Malformed responses also exercise native transaction cleanup.
+                    native.Accept(text);
+                    throw new HttpRequestException($"Pandora answered {(int)response.StatusCode} with something that is not JSON.", e);
+                }
 
-        if (answer["stat"]?.GetValue<string>() == "ok")
-            return answer["result"] as JsonObject ?? [];
-        var code = answer["code"]?.GetValue<int>() ?? -1;
-        var message = answer["message"]?.GetValue<string>() ?? "no message";
-        if (code == PandoraException.InvalidAuthToken)
+                var status = native.Accept(NativeResponse(method, answer));
+                if (answer["stat"]?.GetValue<string>() == "ok")
+                {
+                    native.Check(status, allowContinue: method == "auth.partnerLogin");
+                    lock (sessionSync) EnsureSession(expectedEpoch, ct);
+                    if (method == "auth.partnerLogin")
+                        partnerServerTime = native.ServerTime;
+                    return answer["result"] as JsonObject ?? [];
+                }
+
+                var code = answer["code"]?.GetValue<int>() ?? -1;
+                var message = answer["message"]?.GetValue<string>() ?? "no message";
+                if (code == PandoraException.InvalidAuthToken)
+                {
+                    lock (sessionSync)
+                    {
+                        if (sessionEpoch == expectedEpoch)
+                            userAuthToken = null;
+                    }
+                }
+                throw new PandoraException(code, message);
+            }
+            finally
+            {
+                // Covers cancellation, HTTP failures, invalid JSON and successful accepts.
+                native.Abort();
+                ResetProtocolIfRequested();
+            }
+        }
+        finally
+        {
+            lock (sessionSync)
+            {
+                if (ReferenceEquals(activeRequest, linked)) activeRequest = null;
+            }
+            protocolGate.Release();
+        }
+    }
+
+    private string NativeResponse(string method, JsonObject answer)
+    {
+        if (method != "station.getPlaylist" || answer["stat"]?.GetValue<string>() != "ok")
+            return answer.ToJsonString();
+
+        // Historical libpiano selects one named audioUrlMap quality. XivPiano
+        // negotiates extra MP3 URLs and can choose a lower named quality. Project
+        // exactly the selected playable stream into that legacy slot, retaining
+        // the original response for bitrate/account metadata and managed models.
+        var normalized = (JsonObject)answer.DeepClone();
+        if (normalized["result"]?["items"] is JsonArray items)
+        {
+            var formats = RequestedFormats();
+            var cap = Quality == AudioQuality.Standard ? 128 : int.MaxValue;
+            foreach (var item in items.OfType<JsonObject>().ToArray())
+            {
+                if (item["songName"] == null)
+                    continue;
+                var selected = ParseTrack(item, now(), formats, cap);
+                if (selected != null)
+                    item["audioUrlMap"] = new JsonObject
+                    {
+                        ["highQuality"] = new JsonObject
+                        {
+                            ["encoding"] = selected.AudioEncoding,
+                            ["audioUrl"] = selected.AudioUrl,
+                            ["bitrate"] = selected.Bitrate.ToString(CultureInfo.InvariantCulture),
+                        },
+                    };
+                else
+                    // The effective playlist contains playable MP3s. AAC-only
+                    // songs are omitted by the same policy used for the queue.
+                    items.Remove(item);
+            }
+        }
+        return normalized.ToJsonString();
+    }
+
+    public void Dispose()
+    {
+        lock (sessionSync)
+        {
+            if (disposed != 0)
+                return;
+            disposed = 1;
+            ++sessionEpoch;
+            ++signoutEpoch;
+            ++loginIntent;
+            credentials = null;
             userAuthToken = null;
-        throw new PandoraException(code, message);
+            Account = null;
+        }
+        lifetime.Cancel();
+        _ = DisposeProtocolAsync();
+    }
+
+    private void ResetProtocolIfRequested()
+    {
+        // Caller owns protocolGate. Lock ordering is always gate -> sessionSync;
+        // sign-out releases sessionSync before trying to acquire the gate.
+        lock (sessionSync)
+        {
+            if (Interlocked.Exchange(ref resetProtocol, 0) == 0)
+                return;
+            protocol?.Dispose();
+            protocol = null;
+        }
+    }
+
+    private void DisposeIdleProtocol()
+    {
+        if (!protocolGate.Wait(0))
+            return;
+        try { ResetProtocolIfRequested(); }
+        finally { protocolGate.Release(); }
+    }
+
+    private async Task DrainSignedOutProtocolAsync((long Signout, long Login) intent)
+    {
+        await protocolGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            lock (sessionSync)
+            {
+                // A new explicit sign-in owns its new session. A delayed logout
+                // drain must never dispose that replacement session.
+                if (intent != (signoutEpoch, loginIntent))
+                    return;
+                protocol?.Dispose();
+                protocol = null;
+                Interlocked.Exchange(ref resetProtocol, 0);
+            }
+        }
+        finally { protocolGate.Release(); }
+    }
+
+    private async Task DisposeProtocolAsync()
+    {
+        // Cancelling HTTP is asynchronous; wait without blocking Dalamud's
+        // framework thread before releasing the session's native allocations.
+        await protocolGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            protocol?.Dispose();
+            protocol = null;
+            lifetime.Dispose();
+        }
+        finally
+        {
+            protocolGate.Release();
+        }
     }
 
     private static string Str(JsonObject o, string key) =>
         o[key]?.GetValue<string>() ?? throw new FormatException($"Pandora's answer has no {key}.");
+
+    private static bool Boolean(JsonObject o, string key, bool fallback)
+    {
+        if (o[key] == null) return fallback;
+        if (o[key] is JsonValue value && value.TryGetValue<bool>(out var result)) return result;
+        throw new FormatException($"Pandora's answer has invalid {key} metadata.");
+    }
 }

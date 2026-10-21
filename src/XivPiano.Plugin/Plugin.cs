@@ -488,6 +488,7 @@ public sealed class Plugin : IDalamudPlugin
         dtr?.Remove();
         Radio?.Dispose();
         Audio.Dispose();
+        Pandora.Dispose();
         windows.RemoveAllWindows();
         window.Dispose();
         http.Dispose();
