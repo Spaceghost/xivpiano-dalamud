@@ -13,9 +13,9 @@ Statuses mean the same thing in every one of these mods:
 * **BETA** — merged, but not yet verified in game.
 * **SOON** — still being built.
 
-## [Unreleased] — In the workshop
+## [0.1.1] — Released 2026-10-23
 
-Host-tested testing candidate; sound and game-side behavior still need live acceptance.
+BETA entries are in this release but have not been verified in game yet; they become NEW or FIX once they have been seen working.
 
 * Spaceghost Scrobbles is an opt-in scrobbling destination: keep listening history and forward to Last.fm or ListenBrainz accounts connected in its dashboard. Save an encrypted client token and check the connection without submitting a listen; compatible custom HTTPS hosts are supported. Existing direct destinations remain available.
 * Pandora requests now use melodica.h's libpiano implementation through a bundled Windows x64 bridge, including on Wine. Paid-account MP3 selection, account metadata, genre search and playback controls are preserved. Sign-out cancels pending requests, and older login retries cannot replace a newer account.

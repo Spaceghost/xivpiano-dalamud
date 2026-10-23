@@ -1,75 +1,75 @@
 {
- "_comment": "The changelog. tools/changelog.py renders CHANGELOG.md from this file, and release notes and the installer's changelog are written from it. Every user-visible change edits this file in the same commit. Statuses: new/fix (in a release, seen working in game), beta (merged, not yet verified in game), next (still being built, not merged).",
- "project": "XivPiano",
- "intro": "Every change to XivPiano a player can see, newest first.\n\nXivPiano has not yet been heard playing in the game. Host tests cover the Blowfish cipher (against published vectors), Pandora's request wrapping, the login sequence, playlists, feedback, search and the radio queue against a fake Pandora, and the partner login has been checked against Pandora itself. Sound, the window and the game-side behaviour below are the design until they have been seen working.",
- "releases": [
-  {
-   "version": "next",
-   "title": "In the workshop",
-   "date": "2026-10-11",
-   "blurb": "Host-tested testing candidate; sound and game-side behavior still need live acceptance.",
-   "items": [
+  "_comment": "The changelog. tools/changelog.py renders CHANGELOG.md from this file, and release notes and the installer's changelog are written from it. Every user-visible change edits this file in the same commit. Statuses: new/fix (in a release, seen working in game), beta (merged, not yet verified in game), next (still being built, not merged).",
+  "project": "XivPiano",
+  "intro": "Every change to XivPiano a player can see, newest first.\n\nXivPiano has not yet been heard playing in the game. Host tests cover the Blowfish cipher (against published vectors), Pandora's request wrapping, the login sequence, playlists, feedback, search and the radio queue against a fake Pandora, and the partner login has been checked against Pandora itself. Sound, the window and the game-side behaviour below are the design until they have been seen working.",
+  "releases": [
     {
-     "status": "beta",
-     "text": "Spaceghost Scrobbles is an opt-in scrobbling destination: keep listening history and forward to Last.fm or ListenBrainz accounts connected in its dashboard. Save an encrypted client token and check the connection without submitting a listen; compatible custom HTTPS hosts are supported. Existing direct destinations remain available."
-    },
-    {
-     "status": "beta",
-     "text": "Pandora requests now use melodica.h's libpiano implementation through a bundled Windows x64 bridge, including on Wine. Paid-account MP3 selection, account metadata, genre search and playback controls are preserved. Sign-out cancels pending requests, and older login retries cannot replace a newer account."
-    },
-    {
-     "status": "beta",
-     "text": "Copy public song text without stream URLs, account tokens or tracking parameters; receive song changes through XivPiano.SongChanged IPC."
-    },
-    {
-     "status": "beta",
-     "text": "Read a versioned audio snapshot aligned to played audio: RMS, peak, onset, three energy bands and a 32-band spectrum. Paused, stopped, stale or unavailable audio reports silence; main-thread reads do not wait on the audio lock."
-    },
-    {
-     "status": "beta",
-     "text": "Opt into dialogue volume ducking and selected duty music priority. Automatic pauses fade, track their ownership and respect manual playback changes and loading transitions."
-    },
-    {
-     "status": "beta",
-     "text": "Shared station edits now use the adopted station identity consistently; seed requests and song history actions report asynchronous failures without changing the current queue."
-    },
-    {
-     "status": "beta",
-     "text": "Pandora in the game: sign in with your Pandora account and play your stations. Play and pause, next song, thumbs up and down (down also skips), *tired of it* (not for a month), bookmark the song or the artist, and *why this song?* in Pandora's own words. Songs stream as 128 kbit/s MP3 for every account, decoded in managed code, so it sounds the same under Wine as on Windows; album art and a progress bar show what is playing."
-    },
-    {
-     "status": "beta",
-     "text": "Pandora Plus and Premium: a paid account streams 192 kbit/s MP3 (free accounts 128), as Elpis, pianobar and Pithos do. XivPiano tells a paid account by Pandora's own flags (subscriber, or no audio ads), asks for the 192 kbit/s stream through the ordinary client like Elpis, and when that is not offered moves to the Pandora One client like Pithos. *Settings* has the audio quality (best, or 128 kbit/s to save data) and the client to use (automatic, Android, or Pandora One), and the window shows your plan and the stream's bitrate."
-    },
-    {
-     "status": "beta",
-     "text": "New stations from a search (an artist, a song or a genre) or from the song or artist that is playing, and a filter over your station list."
-    },
-    {
-     "status": "beta",
-     "text": "Your stations, managed as in pianobar, Pithos and Elpis: right-click a station to rename it, delete it (after asking), put it in or take it out of Shuffle, or open its seeds, thumbs and modes. There you can add variety (another artist or song), remove a seed, take back a thumb, and switch Pandora's station modes (*Deep Cuts*, *Discovery* and the like, where your account has them). Shuffle's own menu chooses all its stations at once. A station shared with you becomes your own copy the first time you change it, as pianobar does. Stations can be listed A to Z."
-    },
-    {
-     "status": "beta",
-     "text": "*History* lists the last 20 songs, each with thumbs up and down, *tired of it* and bookmarks, without skipping what is playing. *Up next* shows the songs Pandora has queued. *Open on Pandora* opens a song's page. *New station* adds Pandora's genre stations to browse."
-    },
-    {
-     "status": "beta",
-     "text": "Scrobbling to Last.fm (with your own free API key, connected in the browser once) and to ListenBrainz (your user token), by Last.fm's rule: songs over 30 seconds, after half their length or four minutes. Now-playing is sent too."
-    },
-    {
-     "status": "beta",
-     "text": "A toast for each new song, the keyboard's media keys (play/pause, next, stop), and Pandora's explicit content filter in *Settings*."
-    },
-    {
-     "status": "beta",
-     "text": "The song in the server info bar (click opens XivPiano, right-click pauses), `/piano play|pause|next|love|ban|tired|stop` and `/piano station <name>` for chat and macros, and IPC for other plugins (`XivPiano.NowPlaying`, `XivPiano.Control`)."
-    },
-    {
-     "status": "beta",
-     "text": "Plays nicely with the game: mutes the game's background music while a song plays and puts it back as it was, pauses during cutscenes and resumes after, and can say each new song in chat. The password can be kept, encrypted for your Windows (or Wine) user, to sign in and resume your last station when the game starts."
+      "version": "0.1.1",
+      "title": "Released 2026-10-23",
+      "date": "2026-10-23",
+      "blurb": "BETA entries are in this release but have not been verified in game yet; they become NEW or FIX once they have been seen working.",
+      "items": [
+        {
+          "status": "beta",
+          "text": "Spaceghost Scrobbles is an opt-in scrobbling destination: keep listening history and forward to Last.fm or ListenBrainz accounts connected in its dashboard. Save an encrypted client token and check the connection without submitting a listen; compatible custom HTTPS hosts are supported. Existing direct destinations remain available."
+        },
+        {
+          "status": "beta",
+          "text": "Pandora requests now use melodica.h's libpiano implementation through a bundled Windows x64 bridge, including on Wine. Paid-account MP3 selection, account metadata, genre search and playback controls are preserved. Sign-out cancels pending requests, and older login retries cannot replace a newer account."
+        },
+        {
+          "status": "beta",
+          "text": "Copy public song text without stream URLs, account tokens or tracking parameters; receive song changes through XivPiano.SongChanged IPC."
+        },
+        {
+          "status": "beta",
+          "text": "Read a versioned audio snapshot aligned to played audio: RMS, peak, onset, three energy bands and a 32-band spectrum. Paused, stopped, stale or unavailable audio reports silence; main-thread reads do not wait on the audio lock."
+        },
+        {
+          "status": "beta",
+          "text": "Opt into dialogue volume ducking and selected duty music priority. Automatic pauses fade, track their ownership and respect manual playback changes and loading transitions."
+        },
+        {
+          "status": "beta",
+          "text": "Shared station edits now use the adopted station identity consistently; seed requests and song history actions report asynchronous failures without changing the current queue."
+        },
+        {
+          "status": "beta",
+          "text": "Pandora in the game: sign in with your Pandora account and play your stations. Play and pause, next song, thumbs up and down (down also skips), *tired of it* (not for a month), bookmark the song or the artist, and *why this song?* in Pandora's own words. Songs stream as 128 kbit/s MP3 for every account, decoded in managed code, so it sounds the same under Wine as on Windows; album art and a progress bar show what is playing."
+        },
+        {
+          "status": "beta",
+          "text": "Pandora Plus and Premium: a paid account streams 192 kbit/s MP3 (free accounts 128), as Elpis, pianobar and Pithos do. XivPiano tells a paid account by Pandora's own flags (subscriber, or no audio ads), asks for the 192 kbit/s stream through the ordinary client like Elpis, and when that is not offered moves to the Pandora One client like Pithos. *Settings* has the audio quality (best, or 128 kbit/s to save data) and the client to use (automatic, Android, or Pandora One), and the window shows your plan and the stream's bitrate."
+        },
+        {
+          "status": "beta",
+          "text": "New stations from a search (an artist, a song or a genre) or from the song or artist that is playing, and a filter over your station list."
+        },
+        {
+          "status": "beta",
+          "text": "Your stations, managed as in pianobar, Pithos and Elpis: right-click a station to rename it, delete it (after asking), put it in or take it out of Shuffle, or open its seeds, thumbs and modes. There you can add variety (another artist or song), remove a seed, take back a thumb, and switch Pandora's station modes (*Deep Cuts*, *Discovery* and the like, where your account has them). Shuffle's own menu chooses all its stations at once. A station shared with you becomes your own copy the first time you change it, as pianobar does. Stations can be listed A to Z."
+        },
+        {
+          "status": "beta",
+          "text": "*History* lists the last 20 songs, each with thumbs up and down, *tired of it* and bookmarks, without skipping what is playing. *Up next* shows the songs Pandora has queued. *Open on Pandora* opens a song's page. *New station* adds Pandora's genre stations to browse."
+        },
+        {
+          "status": "beta",
+          "text": "Scrobbling to Last.fm (with your own free API key, connected in the browser once) and to ListenBrainz (your user token), by Last.fm's rule: songs over 30 seconds, after half their length or four minutes. Now-playing is sent too."
+        },
+        {
+          "status": "beta",
+          "text": "A toast for each new song, the keyboard's media keys (play/pause, next, stop), and Pandora's explicit content filter in *Settings*."
+        },
+        {
+          "status": "beta",
+          "text": "The song in the server info bar (click opens XivPiano, right-click pauses), `/piano play|pause|next|love|ban|tired|stop` and `/piano station <name>` for chat and macros, and IPC for other plugins (`XivPiano.NowPlaying`, `XivPiano.Control`)."
+        },
+        {
+          "status": "beta",
+          "text": "Plays nicely with the game: mutes the game's background music while a song plays and puts it back as it was, pauses during cutscenes and resumes after, and can say each new song in chat. The password can be kept, encrypted for your Windows (or Wine) user, to sign in and resume your last station when the game starts."
+        }
+      ]
     }
-   ]
-  }
- ]
+  ]
 }
