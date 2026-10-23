@@ -11,6 +11,10 @@
    "items": [
     {
      "status": "beta",
+     "text": "Spaceghost Scrobbles is an opt-in scrobbling destination: keep listening history and forward to Last.fm or ListenBrainz accounts connected in its dashboard. Save an encrypted client token and check the connection without submitting a listen; compatible custom HTTPS hosts are supported. Existing direct destinations remain available."
+    },
+    {
+     "status": "beta",
      "text": "Pandora requests now use melodica.h's libpiano implementation through a bundled Windows x64 bridge, including on Wine. Paid-account MP3 selection, account metadata, genre search and playback controls are preserved. Sign-out cancels pending requests, and older login retries cannot replace a newer account."
     },
     {

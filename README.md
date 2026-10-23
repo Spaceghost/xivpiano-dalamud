@@ -32,7 +32,7 @@ from any artist, song or genre.
   modes**: add variety, remove a seed, take back a thumb, switch Pandora's station modes. Sort A to Z.
 - **History** of the last 20 songs, each still rateable and bookmarkable; **Up next**; **Open on Pandora**; Pandora's
   **genre stations** to browse.
-- **Scrobbling** to **Last.fm** (your own free API key) and **ListenBrainz** (your user token).
+- **Scrobbling** to **Spaceghost Scrobbles** (stored history and forwarding), **Last.fm** (your own free API key) and **ListenBrainz** (your user token).
 - **Toasts** for new songs, the keyboard's **media keys**, and Pandora's **explicit content filter**.
 - **Song-change IPC** for other plugins, alongside the existing Now Playing and playback-control gates. See [IPC contract](docs/IPC.md).
 - **The song in the server info bar**: click opens XivPiano, right-click pauses.
@@ -63,6 +63,18 @@ The window shows your plan, the client in use and each song's bitrate.
   code ([NLayer](https://github.com/naudio/NLayer)) and played through winmm ([NAudio](https://github.com/naudio/NAudio)),
   so nothing depends on Windows codecs.
 - A Pandora account (free, Plus or Premium), in the United States.
+
+## Scrobbling
+
+To keep listening history with [Spaceghost Scrobbles](https://spacegho.st/mods/ffxiv/scrobble/), open its dashboard,
+connect any Last.fm or ListenBrainz accounts you want it to forward to, and create a client token. In XivPiano's
+**Settings → Scrobbling**, enable **Spaceghost Scrobbles**, paste the token, then choose **Save and check connection**.
+The token is encrypted for your Windows/Wine user. The connection check validates the token without submitting a listen.
+
+The host receives public song metadata and listening timestamps; Pandora credentials, stream URLs and account
+tokens are excluded. Forwarding is managed in the host dashboard. Keep a direct Last.fm/ListenBrainz destination
+off in XivPiano when the host forwards to that same account, to avoid duplicates. Direct scrobbling remains available.
+The service URL can point to another compatible HTTPS host.
 
 ## Commands
 

@@ -71,9 +71,18 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Your ListenBrainz user token, encrypted.</summary>
     public string ProtectedListenBrainzToken { get; set; } = "";
 
+    public bool ScrobbleToSpaceghost { get; set; }
+
+    public string SpaceghostScrobblesEndpoint { get; set; } = XivPiano.Core.SpaceghostScrobbles.DefaultEndpoint;
+
+    /// <summary>The hosted scrobbling client token, encrypted for this Windows/Wine user.</summary>
+    public string ProtectedSpaceghostScrobblesToken { get; set; } = "";
+
     public void Clamp()
     {
         GameMusicDutyTypes ??= [];
+        SpaceghostScrobblesEndpoint ??= XivPiano.Core.SpaceghostScrobbles.DefaultEndpoint;
+        ProtectedSpaceghostScrobblesToken ??= "";
         Volume = float.IsFinite(Volume) ? Math.Clamp(Volume, 0f, 1f) : 0.6f;
         DuckTo = float.IsFinite(DuckTo) ? Math.Clamp(DuckTo, 0f, 1f) : 0.25f;
     }

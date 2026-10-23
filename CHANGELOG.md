@@ -17,6 +17,7 @@ Statuses mean the same thing in every one of these mods:
 
 Host-tested testing candidate; sound and game-side behavior still need live acceptance.
 
+* Spaceghost Scrobbles is an opt-in scrobbling destination: keep listening history and forward to Last.fm or ListenBrainz accounts connected in its dashboard. Save an encrypted client token and check the connection without submitting a listen; compatible custom HTTPS hosts are supported. Existing direct destinations remain available.
 * Pandora requests now use melodica.h's libpiano implementation through a bundled Windows x64 bridge, including on Wine. Paid-account MP3 selection, account metadata, genre search and playback controls are preserved. Sign-out cancels pending requests, and older login retries cannot replace a newer account.
 * Copy public song text without stream URLs, account tokens or tracking parameters; receive song changes through XivPiano.SongChanged IPC.
 * Read a versioned audio snapshot aligned to played audio: RMS, peak, onset, three energy bands and a 32-band spectrum. Paused, stopped, stale or unavailable audio reports silence; main-thread reads do not wait on the audio lock.

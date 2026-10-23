@@ -44,6 +44,10 @@ public sealed class MainWindow : Window, IDisposable
 
     private string lastFmSecret = "";
     private string listenBrainzToken = "";
+    private string spaceghostToken = "";
+    private string spaceghostEndpoint = "";
+    private Task<string>? spaceghostCheck;
+    private string? spaceghostMessage;
     private string? lastFmToken;
     private string? lastFmMessage;
 
@@ -61,6 +65,7 @@ public sealed class MainWindow : Window, IDisposable
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(460, 280), MaximumSize = new Vector2(float.MaxValue, float.MaxValue) };
         email = plugin.Config.Email;
+        spaceghostEndpoint = plugin.Config.SpaceghostScrobblesEndpoint;
     }
 
     public override void Draw()
@@ -668,6 +673,9 @@ public sealed class MainWindow : Window, IDisposable
 
         ImGui.Separator();
         ImGui.TextUnformatted("Scrobbling");
+        changed |= Check("Spaceghost Scrobbles", c.ScrobbleToSpaceghost, v => c.ScrobbleToSpaceghost = v);
+        if (c.ScrobbleToSpaceghost)
+            DrawSpaceghostScrobbles(c);
         changed |= Check("Last.fm", c.ScrobbleToLastFm, v => c.ScrobbleToLastFm = v);
         if (c.ScrobbleToLastFm)
             changed |= DrawLastFm(c);
@@ -685,6 +693,80 @@ public sealed class MainWindow : Window, IDisposable
 
         if (changed)
             plugin.SaveConfig();
+    }
+
+    private void DrawSpaceghostScrobbles(Configuration c)
+    {
+        if (spaceghostCheck is { IsCompleted: true } completed)
+        {
+            try { spaceghostMessage = "Connected as " + completed.GetAwaiter().GetResult() + "."; }
+            catch (OperationCanceledException) { spaceghostMessage = "Connection check canceled."; }
+            catch (Exception e) when (e is HttpRequestException or FormatException or InvalidOperationException)
+            { spaceghostMessage = e.Message; }
+            spaceghostCheck = null;
+        }
+
+        ImGui.TextWrapped("Keep your listening history and forward listens to accounts connected in the dashboard.");
+        if (ImGui.Button("Open scrobble dashboard"))
+        {
+            var dashboard = SpaceghostScrobbles.TryNormalizeEndpoint(spaceghostEndpoint, out var normalized)
+                ? normalized + "/" : SpaceghostScrobbles.Dashboard;
+            Util.OpenLink(dashboard);
+        }
+        ImGui.TextWrapped("If the host forwards to Last.fm or ListenBrainz, leave that direct destination off here to avoid duplicate listens.");
+
+        ImGui.BeginDisabled(spaceghostCheck != null);
+        ImGui.SetNextItemWidth(350 * ImGuiHelpers.GlobalScale);
+        if (ImGui.InputText("Service URL##sgendpoint", ref spaceghostEndpoint, 2048))
+            spaceghostMessage = null;
+        var endpointValid = SpaceghostScrobbles.TryNormalizeEndpoint(spaceghostEndpoint, out var endpoint);
+        if (!endpointValid)
+            ImGui.TextWrapped("Use an HTTPS service URL without a username, query or fragment.");
+
+        var savedToken = Secrets.Unprotect(c.ProtectedSpaceghostScrobblesToken);
+        ImGui.SetNextItemWidth(350 * ImGuiHelpers.GlobalScale);
+        if (ImGui.InputTextWithHint("Client token##sgtoken", savedToken != null ? "token saved; leave blank to keep it" : "create a client token in the dashboard",
+                ref spaceghostToken, 512, ImGuiInputTextFlags.Password))
+            spaceghostMessage = null;
+        var token = spaceghostToken.Trim();
+        var tokenAvailable = token.Length > 0 || !string.IsNullOrWhiteSpace(savedToken);
+        ImGui.BeginDisabled(!endpointValid || !tokenAvailable);
+        if (ImGui.Button("Save and check connection##sgsave"))
+        {
+            try
+            {
+                var selected = token.Length > 0 ? token : savedToken!;
+                var provider = new SpaceghostScrobbles(http, selected, endpoint);
+                var protectedToken = token.Length > 0 ? Secrets.Protect(selected) : c.ProtectedSpaceghostScrobblesToken;
+                c.SpaceghostScrobblesEndpoint = endpoint;
+                c.ProtectedSpaceghostScrobblesToken = protectedToken;
+                plugin.SaveConfig();
+                spaceghostToken = "";
+                spaceghostMessage = null;
+                spaceghostCheck = provider.ValidateTokenAsync(cts.Token);
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+            { spaceghostMessage = e.Message; }
+        }
+        ImGui.EndDisabled();
+        if (savedToken != null)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Forget client token##sgforget"))
+            {
+                c.ProtectedSpaceghostScrobblesToken = "";
+                c.ScrobbleToSpaceghost = false;
+                spaceghostToken = "";
+                spaceghostMessage = "Client token removed.";
+                plugin.SaveConfig();
+            }
+        }
+        ImGui.EndDisabled();
+        if (spaceghostCheck != null)
+            ImGui.TextDisabled("Checking connection...");
+        else if (spaceghostMessage != null)
+            ImGui.TextWrapped(spaceghostMessage);
+        ImGui.TextDisabled("Checking a connection does not send a listen.");
     }
 
     private bool DrawLastFm(Configuration c)

@@ -219,6 +219,11 @@ public sealed class Plugin : IDalamudPlugin
             list.Add(new LastFm(http, Config.LastFmApiKey, secret, session));
         if (Config.ScrobbleToListenBrainz && Secrets.Unprotect(Config.ProtectedListenBrainzToken) is { } token)
             list.Add(new ListenBrainz(http, token));
+        if (Config.ScrobbleToSpaceghost &&
+            SpaceghostScrobbles.TryNormalizeEndpoint(Config.SpaceghostScrobblesEndpoint, out var endpoint) &&
+            Secrets.Unprotect(Config.ProtectedSpaceghostScrobblesToken) is { Length: > 0 } clientToken &&
+            !clientToken.Any(char.IsWhiteSpace) && !clientToken.Any(char.IsControl))
+            list.Add(new SpaceghostScrobbles(http, clientToken, endpoint));
         return list;
     }
 
