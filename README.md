@@ -33,6 +33,7 @@ from any artist, song or genre.
 - **History** of the last 20 songs, each still rateable and bookmarkable; **Up next**; **Open on Pandora**; Pandora's
   **genre stations** to browse.
 - **Scrobbling** to **Spaceghost Scrobbles** (stored history and forwarding), **Last.fm** (your own free API key) and **ListenBrainz** (your user token).
+- **Saved recordings**: opt into keeping MP3 songs, replay them without signing in, and explicitly share selected recordings through private browser links. See [recordings](docs/RECORDINGS.md).
 - **Toasts** for new songs, the keyboard's **media keys**, and Pandora's **explicit content filter**.
 - **Song-change IPC** for other plugins, alongside the existing Now Playing and playback-control gates. See [IPC contract](docs/IPC.md).
 - **The song in the server info bar**: click opens XivPiano, right-click pauses.
@@ -63,6 +64,20 @@ The window shows your plan, the client in use and each song's bitrate.
   code ([NLayer](https://github.com/naudio/NLayer)) and played through winmm ([NAudio](https://github.com/naudio/NAudio)),
   so nothing depends on Windows codecs.
 - A Pandora account (free, Plus or Premium), in the United States.
+
+## Saved recordings
+
+Open **Recordings → Save songs I play** to keep complete MP3s from future songs.
+The library survives restarts and plays without a Pandora login. Its default limit
+is 2 GiB; when full, saving pauses and existing recordings are kept.
+
+**Upload & share** sends only the selected recording to your private hosted library,
+using the client token saved under **Settings → Scrobbling**. **Copy private link**
+gives friends a browser player and MP3 download. Links expire after 30 days;
+**Revoke link** stops their future use. Creating another link replaces the previous
+one. The [dashboard](https://spacegho.st/mods/ffxiv/scrobble/) manages hosted copies;
+deleting a local MP3 and deleting its hosted copy are separate actions. Nothing is
+uploaded automatically.
 
 ## Scrobbling
 

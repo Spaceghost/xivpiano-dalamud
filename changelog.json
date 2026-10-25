@@ -4,6 +4,18 @@
   "intro": "Every change to XivPiano a player can see, newest first.\n\nXivPiano has not yet been heard playing in the game. Host tests cover the Blowfish cipher (against published vectors), Pandora's request wrapping, the login sequence, playlists, feedback, search and the radio queue against a fake Pandora, and the partner login has been checked against Pandora itself. Sound, the window and the game-side behaviour below are the design until they have been seen working.",
   "releases": [
     {
+      "version": "next",
+      "title": "In the workshop",
+      "date": "2026-10-24",
+      "blurb": "Saved recordings and private browser playback; live game acceptance remains open.",
+      "items": [
+        {
+          "status": "beta",
+          "text": "Opt into saving downloaded songs as persistent MP3 recordings. Browse and play the local library without signing in, set a storage limit, and explicitly upload selected recordings for private browser playback. Listening links expire after 30 days and can be revoked; Pandora credentials, track tokens and expiring stream URLs are excluded from recording metadata."
+        }
+      ]
+    },
+    {
       "version": "0.1.1",
       "title": "Released 2026-10-23",
       "date": "2026-10-23",

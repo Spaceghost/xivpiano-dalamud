@@ -47,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(60) };
     private readonly CancellationTokenSource cts = new();
     private readonly MainWindow window;
+    private readonly Task recordingsReady;
     private readonly ICallGateProvider<string> nowPlayingGate;
     private readonly ICallGateProvider<string> audioFeaturesGate;
     private static readonly JsonSerializerOptions AudioFeatureJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -90,7 +91,9 @@ public sealed class Plugin : IDalamudPlugin
             Quality = Config.Quality,
             ClientChoice = Config.Client,
         };
-        Audio = new AudioOut(http) { Volume = Config.Volume };
+        Recordings = new RecordingLibrary(Path.Combine(pi.GetPluginConfigDirectory(), "recordings"));
+        recordingsReady = LoadRecordingsAsync();
+        Audio = new AudioOut(http, Recordings) { Volume = Config.Volume, SaveDownloaded = SaveDownloadedAsync };
 
         window = new MainWindow(this, textures, http);
         windows.AddWindow(window);
@@ -126,6 +129,46 @@ public sealed class Plugin : IDalamudPlugin
     public PandoraClient Pandora { get; }
 
     public AudioOut Audio { get; }
+
+    public RecordingLibrary Recordings { get; }
+
+    private async Task LoadRecordingsAsync()
+    {
+        try { await Recordings.LoadAsync(cts.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { Recordings.ReportError("The recording library could not be opened: " + e.Message); }
+    }
+
+    private async Task SaveDownloadedAsync(Track track, ReadOnlyMemory<byte> bytes, CancellationToken ct)
+    {
+        if (!Config.SaveRecordings) return;
+        try
+        {
+            await recordingsReady.ConfigureAwait(false);
+            await Recordings.SaveAsync(track, bytes, (long)Config.RecordingStorageGiB * 1024 * 1024 * 1024, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { Recordings.ReportError("Could not save this song: " + e.Message); }
+    }
+
+    public void PlayRecording(SavedRecording recording)
+    {
+        if (Radio == null)
+        {
+            Radio = new Radio(Pandora, Audio);
+            Radio.Changed += OnRadioChanged;
+        }
+        var owner = Radio;
+        automaticPause.ManualChange();
+        Run(async ct =>
+        {
+            await recordingsReady.ConfigureAwait(false);
+            if (ReferenceEquals(Radio, owner))
+                await owner.PlayRecordingAsync(recording, ct).ConfigureAwait(false);
+        });
+    }
 
     public Radio? Radio { get; private set; }
 

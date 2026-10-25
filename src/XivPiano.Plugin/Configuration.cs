@@ -56,6 +56,11 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Play/pause, next and stop from the keyboard's media keys while the game has focus.</summary>
     public bool MediaKeys { get; set; } = true;
 
+    /// <summary>Opt-in saving of downloaded songs; the library is private until explicitly shared.</summary>
+    public bool SaveRecordings { get; set; }
+
+    public int RecordingStorageGiB { get; set; } = 2;
+
     public bool ScrobbleToLastFm { get; set; }
 
     /// <summary>Your own Last.fm API account (last.fm/api): the key, and the secret encrypted like the password.</summary>
@@ -81,6 +86,7 @@ public sealed class Configuration : IPluginConfiguration
     public void Clamp()
     {
         GameMusicDutyTypes ??= [];
+        RecordingStorageGiB = Math.Clamp(RecordingStorageGiB, 1, 100);
         SpaceghostScrobblesEndpoint ??= XivPiano.Core.SpaceghostScrobbles.DefaultEndpoint;
         ProtectedSpaceghostScrobblesToken ??= "";
         Volume = float.IsFinite(Volume) ? Math.Clamp(Volume, 0f, 1f) : 0.6f;

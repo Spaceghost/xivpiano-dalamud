@@ -33,6 +33,7 @@ public sealed class Radio : IDisposable
     private readonly IAudioOut audio;
     private readonly Func<DateTimeOffset> now;
     private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly CancellationTokenSource lifetime = new();
     private readonly List<Track> queue = [];
     private readonly LinkedList<Track> history = new();
     private readonly Dictionary<string, string> adoptedIds = [];
@@ -85,7 +86,25 @@ public sealed class Radio : IDisposable
         }).ConfigureAwait(false);
 
     public async Task NextAsync(CancellationToken ct) =>
-        await Guard("Next song", () => AdvanceAsync(ct)).ConfigureAwait(false);
+        await Guard("Next song", () =>
+        {
+            if (Current?.RecordingId != null) { Stop(); return Task.CompletedTask; }
+            return AdvanceAsync(ct);
+        }).ConfigureAwait(false);
+
+    public async Task PlayRecordingAsync(SavedRecording recording, CancellationToken ct) =>
+        await Guard("Playing saved recording", async () =>
+        {
+            audio.Stop();
+            Station = null;
+            queue.Clear();
+            Current = null;
+            var track = recording.PlaybackTrack();
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.Token);
+            await audio.PlayAsync(track, linked.Token).ConfigureAwait(false);
+            linked.Token.ThrowIfCancellationRequested();
+            Current = track;
+        }).ConfigureAwait(false);
 
     public void TogglePause()
     {
@@ -133,6 +152,7 @@ public sealed class Radio : IDisposable
         {
             if ((track ?? Current) is not { } t)
                 return;
+            RequireLiveTrack(t);
             await pandora.SleepSongAsync(t.Token, ct).ConfigureAwait(false);
             if (t.Token == Current?.Token)
                 await AdvanceAsync(ct).ConfigureAwait(false);
@@ -143,6 +163,7 @@ public sealed class Radio : IDisposable
         {
             if ((track ?? Current) is not { } t)
                 return;
+            RequireLiveTrack(t);
             if (artist)
                 await pandora.BookmarkArtistAsync(t.Token, ct).ConfigureAwait(false);
             else
@@ -156,6 +177,7 @@ public sealed class Radio : IDisposable
     /// </summary>
     private async Task<string> OwnedStationTokenAsync(Track t, CancellationToken ct)
     {
+        RequireLiveTrack(t);
         var station = Stations.FirstOrDefault(s => s.Id == StationId(t.StationId)) ?? Station
             ?? throw new InvalidOperationException("No station to rate on.");
         if (!station.IsShared)
@@ -259,7 +281,15 @@ public sealed class Radio : IDisposable
     }
 
     public Task<string> ExplainAsync(CancellationToken ct, Track? track = null) =>
-        (track ?? Current) is { } t ? pandora.ExplainAsync(t.Token, ct) : Task.FromResult("Nothing is playing.");
+        (track ?? Current) is { } t ? t.RecordingId != null
+            ? Task.FromResult("Saved recordings do not carry Pandora account tokens.")
+            : pandora.ExplainAsync(t.Token, ct) : Task.FromResult("Nothing is playing.");
+
+    private static void RequireLiveTrack(Track track)
+    {
+        if (track.RecordingId != null)
+            throw new InvalidOperationException("Pandora station actions are unavailable for saved recordings.");
+    }
 
     /// <summary>Makes a station, adds it to the list and tunes in.</summary>
     public async Task CreateAndPlayAsync(Func<Task<Station>> create, CancellationToken ct)
@@ -305,7 +335,9 @@ public sealed class Radio : IDisposable
             queue.RemoveAt(0);
             try
             {
-                await audio.PlayAsync(next, ct).ConfigureAwait(false);
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.Token);
+                await audio.PlayAsync(next, linked.Token).ConfigureAwait(false);
+                linked.Token.ThrowIfCancellationRequested();
             }
             catch (Exception e) when (e is HttpRequestException or InvalidDataException or IOException)
             {
@@ -339,7 +371,7 @@ public sealed class Radio : IDisposable
         {
             Error = e.Message;
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or FormatException)
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or FormatException or IOException or UnauthorizedAccessException)
         {
             Error = e is TaskCanceledException ? "Pandora did not answer in time." : e.Message;
         }
@@ -353,6 +385,7 @@ public sealed class Radio : IDisposable
 
     public void Dispose()
     {
+        lifetime.Cancel();
         audio.Ended -= OnEnded;
         gate.Dispose();
     }
