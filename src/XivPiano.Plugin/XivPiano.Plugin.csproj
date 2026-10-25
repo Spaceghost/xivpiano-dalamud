@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>XivPiano</AssemblyName>
     <RootNamespace>XivPiano.Plugin</RootNamespace>
-    <Version>0.1.1.3</Version>
+    <Version>0.1.2.0</Version>
     <!-- Secrets.cs pins the password bytes for the DPAPI call. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>

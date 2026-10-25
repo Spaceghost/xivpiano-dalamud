@@ -13,9 +13,9 @@ Statuses mean the same thing in every one of these mods:
 * **BETA** — merged, but not yet verified in game.
 * **SOON** — still being built.
 
-## [Unreleased] — In the workshop
+## [0.1.2] — Released 2026-10-24
 
-Saved recordings and private browser playback; live game acceptance remains open.
+BETA entries are in this release but have not been verified in game yet; they become NEW or FIX once they have been seen working.
 
 * Opt into saving downloaded songs as persistent MP3 recordings. Browse and play the local library without signing in, set a storage limit, and explicitly upload selected recordings for private browser playback. Listening links expire after 30 days and can be revoked; Pandora credentials, track tokens and expiring stream URLs are excluded from recording metadata.
 

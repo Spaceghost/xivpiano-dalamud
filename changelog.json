@@ -4,10 +4,10 @@
   "intro": "Every change to XivPiano a player can see, newest first.\n\nXivPiano has not yet been heard playing in the game. Host tests cover the Blowfish cipher (against published vectors), Pandora's request wrapping, the login sequence, playlists, feedback, search and the radio queue against a fake Pandora, and the partner login has been checked against Pandora itself. Sound, the window and the game-side behaviour below are the design until they have been seen working.",
   "releases": [
     {
-      "version": "next",
-      "title": "In the workshop",
+      "version": "0.1.2",
+      "title": "Released 2026-10-24",
       "date": "2026-10-24",
-      "blurb": "Saved recordings and private browser playback; live game acceptance remains open.",
+      "blurb": "BETA entries are in this release but have not been verified in game yet; they become NEW or FIX once they have been seen working.",
       "items": [
         {
           "status": "beta",
