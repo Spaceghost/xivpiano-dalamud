@@ -10,7 +10,7 @@ public sealed record SavedRecording(string Id, string Title, string Artist, stri
 {
     public Track PlaybackTrack() => new($"recording:{Id}:{Guid.NewGuid():N}", "", Title, Artist, Album,
         null, Id, "mp3", Bitrate, TimeSpan.FromMilliseconds(DurationMs), false, GainDb, null, DateTimeOffset.UtcNow)
-        { RecordingId = Id };
+    { RecordingId = Id };
 }
 
 /// <summary>Content-addressed MP3s and atomic sidecars. Published snapshots never perform disk I/O on Draw.</summary>
