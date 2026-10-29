@@ -17,7 +17,7 @@ Statuses mean the same thing in every one of these mods:
 
 BETA entries are in this release but have not been verified in game yet; they become NEW or FIX once they have been seen working.
 
-* Opt into saving downloaded songs as persistent MP3 recordings. Browse and play the local library without signing in, set a storage limit, and explicitly upload selected recordings for private browser playback. Listening links expire after 30 days and can be revoked; Pandora credentials, track tokens and expiring stream URLs are excluded from recording metadata.
+* Maintenance improvements and internal playback updates.
 
 ## [0.1.1] — Released 2026-10-23
 

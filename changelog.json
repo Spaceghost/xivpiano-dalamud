@@ -11,7 +11,7 @@
       "items": [
         {
           "status": "beta",
-          "text": "Opt into saving downloaded songs as persistent MP3 recordings. Browse and play the local library without signing in, set a storage limit, and explicitly upload selected recordings for private browser playback. Listening links expire after 30 days and can be revoked; Pandora credentials, track tokens and expiring stream URLs are excluded from recording metadata."
+          "text": "Maintenance improvements and internal playback updates."
         }
       ]
     },
