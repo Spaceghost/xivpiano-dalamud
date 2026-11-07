@@ -35,6 +35,8 @@ public sealed class Radio : IDisposable
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly List<Track> queue = [];
     private readonly LinkedList<Track> history = new();
+    private readonly Dictionary<string, string> adoptedIds = [];
+    private string StationId(string id) => adoptedIds.GetValueOrDefault(id, id);
 
     public Radio(PandoraClient pandora, IAudioOut audio, Func<DateTimeOffset>? clock = null)
     {
@@ -47,6 +49,8 @@ public sealed class Radio : IDisposable
     public const int HistoryLength = 20;
 
     public IReadOnlyList<Station> Stations { get; private set; } = [];
+
+    public Station? ResolveStation(Station station) => Stations.FirstOrDefault(s => s.Id == StationId(station.Id));
 
     public Station? Station { get; private set; }
 
@@ -75,7 +79,7 @@ public sealed class Radio : IDisposable
     public async Task PlayStationAsync(Station station, CancellationToken ct) =>
         await Guard($"Tuning in to {station.Name}", async () =>
         {
-            Station = station;
+            Station = Stations.FirstOrDefault(s => s.Id == StationId(station.Id)) ?? station;
             queue.Clear();
             await AdvanceAsync(ct).ConfigureAwait(false);
         }).ConfigureAwait(false);
@@ -152,20 +156,57 @@ public sealed class Radio : IDisposable
     /// </summary>
     private async Task<string> OwnedStationTokenAsync(Track t, CancellationToken ct)
     {
-        var station = Stations.FirstOrDefault(s => s.Id == t.StationId) ?? Station
+        var station = Stations.FirstOrDefault(s => s.Id == StationId(t.StationId)) ?? Station
             ?? throw new InvalidOperationException("No station to rate on.");
         if (!station.IsShared)
             return station.Token;
+        return (await AdoptStationCoreAsync(station, ct).ConfigureAwait(false)).Token;
+    }
+
+    public async Task AdoptStationAsync(Station station, CancellationToken ct) =>
+        await Guard($"Making {station.Name} your own", async () =>
+        {
+            var current = Stations.FirstOrDefault(s => s.Id == StationId(station.Id))
+                ?? throw new InvalidOperationException("That station is no longer in your list.");
+            await AdoptStationCoreAsync(current, ct).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+
+    public Task<Station?> AddSeedAsync(Station station, string musicToken, CancellationToken ct) =>
+        DoAsync("Adding station variety", async () =>
+        {
+            var current = Stations.FirstOrDefault(s => s.Id == StationId(station.Id))
+                ?? throw new InvalidOperationException("That station is no longer in your list.");
+            var own = await AdoptStationCoreAsync(current, ct).ConfigureAwait(false);
+            await pandora.AddSeedAsync(own, musicToken, ct).ConfigureAwait(false);
+            return own;
+        });
+
+    private async Task<Station> AdoptStationCoreAsync(Station station, CancellationToken ct)
+    {
+        if (!station.IsShared) return station;
         var own = await pandora.TransformSharedStationAsync(station, ct).ConfigureAwait(false);
         Stations = [.. Stations.Select(s => s.Id == station.Id ? own : s)];
-        if (Station?.Id == station.Id)
-            Station = own;
-        return own.Token;
+        if (Station?.Id == station.Id) Station = own;
+        if (own.Id != station.Id)
+        {
+            foreach (var alias in adoptedIds.Where(pair => pair.Value == station.Id).Select(pair => pair.Key).ToList())
+                adoptedIds[alias] = own.Id;
+            adoptedIds[station.Id] = own.Id;
+            if (Current?.StationId == station.Id) Current = Current with { StationId = own.Id };
+            for (int i = 0; i < queue.Count; i++)
+                if (queue[i].StationId == station.Id) queue[i] = queue[i] with { StationId = own.Id };
+            for (var entry = history.First; entry != null; entry = entry.Next)
+                if (entry.Value.StationId == station.Id) entry.Value = entry.Value with { StationId = own.Id };
+            Stations = [.. Stations.Select(s => s.IsQuickMix
+                ? s with { QuickMixIds = [.. s.QuickMixIds.Select(StationId).Distinct()] } : s)];
+        }
+        return own;
     }
 
     /// <summary>Updates a song where it is shown (playing now, or in the history).</summary>
     private void Remark(Track old, Track updated)
     {
+        updated = updated with { StationId = StationId(updated.StationId) };
         if (Current?.Token == old.Token)
             Current = updated;
         for (var node = history.First; node != null; node = node.Next)
@@ -217,8 +258,8 @@ public sealed class Radio : IDisposable
         return result;
     }
 
-    public Task<string> ExplainAsync(CancellationToken ct) =>
-        Current is { } t ? pandora.ExplainAsync(t.Token, ct) : Task.FromResult("Nothing is playing.");
+    public Task<string> ExplainAsync(CancellationToken ct, Track? track = null) =>
+        (track ?? Current) is { } t ? pandora.ExplainAsync(t.Token, ct) : Task.FromResult("Nothing is playing.");
 
     /// <summary>Makes a station, adds it to the list and tunes in.</summary>
     public async Task CreateAndPlayAsync(Func<Task<Station>> create, CancellationToken ct)
@@ -255,7 +296,8 @@ public sealed class Radio : IDisposable
             {
                 if (fetches++ == 3)
                     throw new InvalidOperationException($"{station.Name} gave no playable songs.");
-                queue.AddRange(await pandora.GetPlaylistAsync(station.Token, ct).ConfigureAwait(false));
+                queue.AddRange((await pandora.GetPlaylistAsync(station.Token, ct).ConfigureAwait(false))
+                    .Select(t => t with { StationId = StationId(t.StationId) }));
                 continue;
             }
 
@@ -277,7 +319,8 @@ public sealed class Radio : IDisposable
 
         // Keep one song in hand so the next one starts without waiting for Pandora.
         if (queue.Count == 0)
-            queue.AddRange(await pandora.GetPlaylistAsync(station.Token, ct).ConfigureAwait(false));
+            queue.AddRange((await pandora.GetPlaylistAsync(station.Token, ct).ConfigureAwait(false))
+                    .Select(t => t with { StationId = StationId(t.StationId) }));
     }
 
     private void OnEnded() => _ = NextAsync(CancellationToken.None);

@@ -33,7 +33,15 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Pause during cutscenes and resume after.</summary>
     public bool PauseInCutscenes { get; set; } = true;
 
-    /// <summary>Say each new song in chat.</summary>
+    /// <summary>Duty content types whose game music should take priority; empty means disabled.</summary>
+    public HashSet<uint> GameMusicDutyTypes { get; set; } = [];
+
+    /// <summary>Opt-in volume attenuation while a Talk window is open.</summary>
+    public bool DuckDialogue { get; set; }
+
+    public float DuckTo { get; set; } = 0.25f;
+
+    /// <summary>Print each new song locally in the chat log; never sends a game-chat message.</summary>
     public bool AnnounceInChat { get; set; }
 
     /// <summary>Show the song in the server info bar (click: open, right-click: pause).</summary>
@@ -63,5 +71,10 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Your ListenBrainz user token, encrypted.</summary>
     public string ProtectedListenBrainzToken { get; set; } = "";
 
-    public void Clamp() => Volume = Math.Clamp(Volume, 0f, 1f);
+    public void Clamp()
+    {
+        GameMusicDutyTypes ??= [];
+        Volume = float.IsFinite(Volume) ? Math.Clamp(Volume, 0f, 1f) : 0.6f;
+        DuckTo = float.IsFinite(DuckTo) ? Math.Clamp(DuckTo, 0f, 1f) : 0.25f;
+    }
 }

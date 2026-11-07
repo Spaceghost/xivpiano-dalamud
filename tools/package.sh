@@ -87,7 +87,7 @@ echo "== $OUT/latest.zip"
 ZIP_ENTRIES="$(unzip -Z1 "$OUT/latest.zip")"
 printf '%s\n' "$ZIP_ENTRIES"
 # What Dalamud opens the zip for. A missing manifest installs a plugin that cannot load.
-for want in XivPiano.dll XivPiano.json ; do
+for want in XivPiano.dll XivPiano.Core.dll XivPiano.json NAudio.Core.dll NAudio.Midi.dll NAudio.WinMM.dll NLayer.dll System.Numerics.Tensors.dll ; do
   printf '%s\n' "$ZIP_ENTRIES" | grep -qxF "$want" || { echo "error: $want is not in the zip" >&2; exit 1; }
 done
 

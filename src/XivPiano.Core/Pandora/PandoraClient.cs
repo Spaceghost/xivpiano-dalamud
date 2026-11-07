@@ -163,7 +163,7 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
     /// <summary>Adds variety: another song or artist (a search result's music token) as a seed.</summary>
     public async Task AddSeedAsync(Station station, string musicToken, CancellationToken ct)
     {
-        await OwnAsync(station, ct).ConfigureAwait(false);
+        station = await OwnAsync(station, ct).ConfigureAwait(false);
         await CallAsync("station.addMusic", new JsonObject { ["stationToken"] = station.Token, ["musicToken"] = musicToken }, ct).ConfigureAwait(false);
     }
 
@@ -198,10 +198,9 @@ public sealed class PandoraClient(HttpClient http, Func<DateTimeOffset>? clock =
     }
 
     /// <summary>Ratings and seeds cannot change a station shared with you, so it is made yours first (as pianobar does).</summary>
-    private async Task OwnAsync(Station station, CancellationToken ct)
+    private async Task<Station> OwnAsync(Station station, CancellationToken ct)
     {
-        if (station.IsShared)
-            await TransformSharedStationAsync(station, ct).ConfigureAwait(false);
+        return station.IsShared ? await TransformSharedStationAsync(station, ct).ConfigureAwait(false) : station;
     }
 
     public async Task<IReadOnlyList<StationMode>> GetStationModesAsync(Station station, CancellationToken ct) =>
