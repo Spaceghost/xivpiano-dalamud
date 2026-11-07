@@ -1,5 +1,30 @@
 # XivPiano IPC
 
+## Future song chart (v1)
+
+`GetIpcSubscriber<double,string>("XivPiano.RhythmTimeline.v1").InvokeFunc(30)`
+returns a read-only JSON map of upcoming song onsets. The argument is a look-ahead
+in seconds, bounded to 1–30 (non-finite values use 16). Poll at most 4Hz.
+
+The payload contains `version:1`, `streamId`, `playing`, `positionSeconds`,
+`durationSeconds`, `ready`, `lookAheadSeconds`, and `pulses`. Each pulse has
+song-relative `seconds`, a finite 0–1 `strength`, and a 0–1 `bass` ratio.
+There are at most 128 pulses within the requested future interval. No PCM,
+track URL, title, account information or control capability is exposed.
+
+A separate background NLayer decoder analyzes the downloaded song in 20ms
+energy windows, up to twelve minutes. It never seeks or shares the playback
+decoder. Work stops when the audio source is disposed. Until analysis finishes,
+`ready:false` and an empty list mean the consumer must use a labelled fallback.
+Silence can produce an empty list with `ready:true`. Onsets are measured energy
+rises, not pitch, MIDI, guaranteed beats or predetermined keyboard notes.
+
+Positions use winmm's played byte cursor. Consumers translate song-relative
+times into their own monotonic clock, compensate their own input/display latency,
+and pause/rebuild on stopped playback, changed streams, seeks, missing IPC or
+receipt timeout. The stream counter can restart after plugin reload. This is a
+planning aid; real speakers/Wine can have additional latency.
+
 ## Anonymous played-audio features (v1)
 
 `GetIpcSubscriber<string>("XivPiano.AudioFeatures.v1").InvokeFunc()` polls JSON;

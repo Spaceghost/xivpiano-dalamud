@@ -13,6 +13,12 @@ Statuses mean the same thing in every one of these mods:
 * **BETA** — merged, but not yet verified in game.
 * **SOON** — still being built.
 
+## [unreleased] — Rhythm chart look-ahead
+
+BETA: offline checks pass; live musical acceptance pending.
+
+* A bounded, read-only XivPiano.RhythmTimeline.v1 IPC feed exposes up to 30 seconds of future song onsets, aligned to hardware playback time. A separate background decoder analyzes the downloaded song without seeking or blocking playback. XivSpell uses the map for a longer note approach.
+
 ## [0.1.2] — Released 2026-10-24
 
 BETA entries are in this release but have not been verified in game yet; they become NEW or FIX once they have been seen working.

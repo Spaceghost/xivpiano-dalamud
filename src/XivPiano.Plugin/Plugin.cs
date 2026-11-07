@@ -50,6 +50,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Task recordingsReady;
     private readonly ICallGateProvider<string> nowPlayingGate;
     private readonly ICallGateProvider<string> audioFeaturesGate;
+    private readonly ICallGateProvider<double, string> rhythmTimelineGate;
     private static readonly JsonSerializerOptions AudioFeatureJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private readonly ICallGateProvider<string, object> songChangedGate;
     private readonly ICallGateProvider<string, bool> controlGate;
@@ -112,6 +113,8 @@ public sealed class Plugin : IDalamudPlugin
         nowPlayingGate.RegisterFunc(NowPlayingJson);
         audioFeaturesGate = pi.GetIpcProvider<string>("XivPiano.AudioFeatures.v1");
         audioFeaturesGate.RegisterFunc(() => JsonSerializer.Serialize(Audio.ReadFeatures(), AudioFeatureJson));
+        rhythmTimelineGate = pi.GetIpcProvider<double,string>("XivPiano.RhythmTimeline.v1");
+        rhythmTimelineGate.RegisterFunc(seconds => JsonSerializer.Serialize(Audio.ReadRhythm(seconds), AudioFeatureJson));
         songChangedGate = pi.GetIpcProvider<string, object>("XivPiano.SongChanged");
         controlGate = pi.GetIpcProvider<string, bool>("XivPiano.Control");
         controlGate.RegisterFunc(action => Control(action));
@@ -531,6 +534,7 @@ public sealed class Plugin : IDalamudPlugin
         addonLifecycle.UnregisterListener(AddonEvent.PreFinalize, "Talk", OnTalk);
         nowPlayingGate.UnregisterFunc();
         audioFeaturesGate.UnregisterFunc();
+        rhythmTimelineGate.UnregisterFunc();
         controlGate.UnregisterFunc();
         commands.RemoveHandler(Command);
         pi.UiBuilder.Draw -= windows.Draw;
