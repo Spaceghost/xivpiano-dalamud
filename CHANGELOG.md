@@ -13,10 +13,22 @@ Statuses mean the same thing in every one of these mods:
 * **BETA** — merged, but not yet verified in game.
 * **SOON** — still being built.
 
-## [Unreleased] — In the workshop
+## [0.1.2] — Released 2026-10-24
 
-Merged, not in a release yet.
+BETA entries are in this release but have not been verified in game yet; they become NEW or FIX once they have been seen working.
 
+* Maintenance improvements and internal playback updates.
+
+## [0.1.1] — Released 2026-10-23
+
+BETA entries are in this release but have not been verified in game yet; they become NEW or FIX once they have been seen working.
+
+* Spaceghost Scrobbles is an opt-in scrobbling destination: keep listening history and forward to Last.fm or ListenBrainz accounts connected in its dashboard. Save an encrypted client token and check the connection without submitting a listen; compatible custom HTTPS hosts are supported. Existing direct destinations remain available.
+* Pandora requests now use melodica.h's libpiano implementation through a bundled Windows x64 bridge, including on Wine. Paid-account MP3 selection, account metadata, genre search and playback controls are preserved. Sign-out cancels pending requests, and older login retries cannot replace a newer account.
+* Copy public song text without stream URLs, account tokens or tracking parameters; receive song changes through XivPiano.SongChanged IPC.
+* Read a versioned audio snapshot aligned to played audio: RMS, peak, onset, three energy bands and a 32-band spectrum. Paused, stopped, stale or unavailable audio reports silence; main-thread reads do not wait on the audio lock.
+* Opt into dialogue volume ducking and selected duty music priority. Automatic pauses fade, track their ownership and respect manual playback changes and loading transitions.
+* Shared station edits now use the adopted station identity consistently; seed requests and song history actions report asynchronous failures without changing the current queue.
 * Pandora in the game: sign in with your Pandora account and play your stations. Play and pause, next song, thumbs up and down (down also skips), *tired of it* (not for a month), bookmark the song or the artist, and *why this song?* in Pandora's own words. Songs stream as 128 kbit/s MP3 for every account, decoded in managed code, so it sounds the same under Wine as on Windows; album art and a progress bar show what is playing.
 * Pandora Plus and Premium: a paid account streams 192 kbit/s MP3 (free accounts 128), as Elpis, pianobar and Pithos do. XivPiano tells a paid account by Pandora's own flags (subscriber, or no audio ads), asks for the 192 kbit/s stream through the ordinary client like Elpis, and when that is not offered moves to the Pandora One client like Pithos. *Settings* has the audio quality (best, or 128 kbit/s to save data) and the client to use (automatic, Android, or Pandora One), and the window shows your plan and the stream's bitrate.
 * New stations from a search (an artist, a song or a genre) or from the song or artist that is playing, and a filter over your station list.

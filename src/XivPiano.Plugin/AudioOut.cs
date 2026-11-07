@@ -12,13 +12,15 @@ namespace XivPiano.Plugin;
 /// resumed and timed without a network stall), decoded by NLayer and played through winmm. The song's replay
 /// gain and the player's volume are applied here.
 /// </summary>
-public sealed class AudioOut(HttpClient http) : IAudioOut, IDisposable
+public sealed class AudioOut(HttpClient http, RecordingLibrary? recordings = null) : IAudioOut, IDisposable
 {
+    public Func<Track, ReadOnlyMemory<byte>, CancellationToken, Task>? SaveDownloaded { get; set; }
     private readonly Lock gate = new();
     private WaveOut? output;
     private MpegSampleProvider? source;
     private float volume = 0.6f;
     private bool stopping;
+    private bool disposed;
     private long streamId;
 
     /// <summary>Read-only visual snapshot aligned to winmm's played bytes, never MP3 decode-ahead.</summary>
@@ -74,28 +76,56 @@ public sealed class AudioOut(HttpClient http) : IAudioOut, IDisposable
 
     public async Task PlayAsync(Track track, CancellationToken ct)
     {
-        using var response = await http.GetAsync(track.AudioUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"the audio link answered {(int)response.StatusCode}");
-        var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+        byte[] bytes;
+        if (track.RecordingId is { } id)
+            bytes = await (recordings ?? throw new IOException("The recording library is unavailable.")).ReadAsync(id, ct).ConfigureAwait(false);
+        else
+        {
+            using var response = await http.GetAsync(track.AudioUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException($"the audio link answered {(int)response.StatusCode}");
+            bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+        }
+        ct.ThrowIfCancellationRequested();
         var mpeg = new MpegFile(new MemoryStream(bytes, writable: false));
         if (mpeg.SampleRate <= 0 || mpeg.Channels <= 0)
+        {
+            mpeg.Dispose();
             throw new InvalidDataException("the audio is not an MP3 this player can read");
+        }
 
         var next = new MpegSampleProvider(mpeg, GainFactor(track.GainDb), Interlocked.Increment(ref streamId)) { Volume = volume };
         var device = new WaveOut { BufferMilliseconds = 200, NumberOfBuffers = 3 };
-        device.Init(next);
-        device.PlaybackStopped += OnStopped;
-        (WaveOut? Output, MpegSampleProvider? Source) old;
-        lock (gate)
+        var installed = false;
+        (WaveOut? Output, MpegSampleProvider? Source) old = default;
+        try
         {
-            old = DetachLocked();
-            source = next;
-            output = device;
-            stopping = false;
-            device.Play();
+            device.Init(next);
+            device.PlaybackStopped += OnStopped;
+            lock (gate)
+            {
+                ObjectDisposedException.ThrowIf(disposed, this);
+                ct.ThrowIfCancellationRequested();
+                old = DetachLocked();
+                source = next;
+                output = device;
+                stopping = false;
+                try { device.Play(); installed = true; }
+                catch { DetachLocked(); throw; }
+            }
         }
-        Release(old);
+        finally
+        {
+            Release(old);
+            if (!installed)
+            {
+                device.PlaybackStopped -= OnStopped;
+                device.Dispose();
+                next.Dispose();
+            }
+        }
+        if (track.RecordingId == null && SaveDownloaded is { } save)
+            await save(track, bytes, ct).ConfigureAwait(false);
     }
 
     /// <summary>Pandora's trackGain is replay gain in dB; capped so a quiet master never clips.</summary>
@@ -159,7 +189,16 @@ public sealed class AudioOut(HttpClient http) : IAudioOut, IDisposable
         old.Source?.Dispose();
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        (WaveOut? Output, MpegSampleProvider? Source) old;
+        lock (gate)
+        {
+            disposed = true;
+            old = DetachLocked();
+        }
+        Release(old);
+    }
 
     /// <summary>NLayer's decoder as an NAudio sample source, with gain and volume.</summary>
     private sealed class MpegSampleProvider(MpegFile mpeg, float gain, long streamId) : ISampleProvider, IDisposable

@@ -1,0 +1,6 @@
+Verified vendored melodica v1.0.0 (7e5ed58ef53b04ea98b9e6d26cbb1d0236521ccc)
+Linux bridge: /work/xivpiano-integration/native/build/linux-x64/libxivpiano_melodica.so
+Windows bridge: /work/xivpiano-integration/runtimes/win-x64/native/xivpiano_melodica.dll
+native bridge: 1279 checks, login, all RPCs, options, validation, abort and ownership: ok
+native bridge: 1279 checks, login, all RPCs, options, validation, abort and ownership: ok
+native bridge: 1279 checks, login, all RPCs, options, validation, abort and ownership: ok

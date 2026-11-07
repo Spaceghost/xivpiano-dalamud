@@ -5,7 +5,7 @@ using XivPiano.Core.Pandora;
 
 namespace XivPiano.Core;
 
-/// <summary>Somewhere listens are reported: Last.fm (as Elpis and Pithos do) or ListenBrainz.</summary>
+/// <summary>A destination for now-playing metadata and completed listens.</summary>
 public interface IScrobbler
 {
     string Name { get; }
@@ -176,5 +176,91 @@ public sealed class ListenBrainz(HttpClient http, string userToken, string endpo
         using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException($"ListenBrainz answered {(int)response.StatusCode}.");
+    }
+}
+
+/// <summary>
+/// An opt-in listening history hosted by Spaceghost. Its dashboard owns downstream
+/// Last.fm/ListenBrainz connections; the client sends the public ListenBrainz metadata only.
+/// </summary>
+public sealed class SpaceghostScrobbles : IScrobbler
+{
+    public const string DefaultEndpoint = "https://spacegho.st/mods/ffxiv/scrobble";
+    public const string Dashboard = DefaultEndpoint + "/";
+    private readonly HttpClient http;
+    private readonly string clientToken;
+    private readonly string endpoint;
+
+    public SpaceghostScrobbles(HttpClient http, string clientToken, string endpoint = DefaultEndpoint)
+    {
+        if (!TryNormalizeEndpoint(endpoint, out var normalized))
+            throw new ArgumentException("Use an HTTPS service URL without a username, query or fragment.", nameof(endpoint));
+        var token = clientToken.Trim();
+        if (token.Length == 0 || token.Any(char.IsWhiteSpace) || token.Any(char.IsControl))
+            throw new ArgumentException("Enter a client token from the scrobble dashboard.", nameof(clientToken));
+        this.http = http;
+        this.clientToken = token;
+        this.endpoint = normalized;
+    }
+
+    public string Name => "Spaceghost Scrobbles";
+
+    public static bool TryNormalizeEndpoint(string? value, out string endpoint)
+    {
+        endpoint = "";
+        if (!Uri.TryCreate(value?.Trim(), UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps || uri.Host.Length == 0 ||
+            uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0)
+            return false;
+        endpoint = uri.AbsoluteUri.TrimEnd('/');
+        return true;
+    }
+
+    public Task NowPlayingAsync(Track track, CancellationToken ct) => SubmitAsync("playing_now", track, null, ct);
+
+    public Task ScrobbleAsync(Track track, DateTimeOffset startedAt, CancellationToken ct) => SubmitAsync("single", track, startedAt, ct);
+
+    /// <summary>Checks authorization without adding a listen or a now-playing entry.</summary>
+    public async Task<string> ValidateTokenAsync(CancellationToken ct)
+    {
+        using var request = Request(HttpMethod.Get, "/1/validate-token");
+        using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
+        CheckResponse(response);
+        JsonObject? answer;
+        try
+        {
+            answer = JsonNode.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false)) as JsonObject;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new FormatException("Spaceghost Scrobbles returned an unreadable connection reply.");
+        }
+        if (answer?["valid"] is not JsonValue valid || !valid.TryGetValue<bool>(out var accepted) || !accepted ||
+            answer["user_name"] is not JsonValue name || !name.TryGetValue<string>(out var userName) || string.IsNullOrWhiteSpace(userName))
+            throw new FormatException("Spaceghost Scrobbles did not confirm this client token.");
+        return userName;
+    }
+
+    private HttpRequestMessage Request(HttpMethod method, string path)
+    {
+        var request = new HttpRequestMessage(method, endpoint + path);
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Token", clientToken);
+        return request;
+    }
+
+    private async Task SubmitAsync(string type, Track track, DateTimeOffset? at, CancellationToken ct)
+    {
+        using var request = Request(HttpMethod.Post, "/1/submit-listens");
+        request.Content = new StringContent(ListenBrainz.Body(type, track, at).ToJsonString(), Encoding.UTF8, "application/json");
+        using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
+        CheckResponse(response);
+    }
+
+    private static void CheckResponse(HttpResponseMessage response)
+    {
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            throw new HttpRequestException("Spaceghost Scrobbles rejected the client token. Create a new token in the dashboard.", null, response.StatusCode);
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException($"Spaceghost Scrobbles answered {(int)response.StatusCode}.", null, response.StatusCode);
     }
 }

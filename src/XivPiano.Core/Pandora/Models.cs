@@ -39,6 +39,9 @@ public sealed record Track(
     /// <summary>Thumbed down in this session (it is not played again on the station).</summary>
     public bool Banned { get; init; }
 
+    /// <summary>Local library identity. Saved playback never reuses a Pandora track token.</summary>
+    public string? RecordingId { get; init; }
+
     /// <summary>Pandora's audio links stop working about an hour after the playlist call; skip past older ones.</summary>
     public static readonly TimeSpan UrlLifetime = TimeSpan.FromMinutes(55);
 

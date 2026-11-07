@@ -1,4 +1,5 @@
 namespace XivPiano.Core.Tests;
+
 public class AutomaticPauseTests
 {
     [Fact]

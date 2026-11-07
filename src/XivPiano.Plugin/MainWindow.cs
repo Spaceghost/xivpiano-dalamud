@@ -44,8 +44,18 @@ public sealed class MainWindow : Window, IDisposable
 
     private string lastFmSecret = "";
     private string listenBrainzToken = "";
+    private string spaceghostToken = "";
+    private string spaceghostEndpoint = "";
+    private Task<string>? spaceghostCheck;
+    private string? spaceghostMessage;
     private string? lastFmToken;
     private string? lastFmMessage;
+    private string recordingFilter = "";
+    private string? deletingRecording;
+    private Task? recordingAction;
+    private string? recordingMessage;
+    private Task<string>? sharingRecording;
+    private string recordingLink = "";
 
     private string? artUrl;
     private IDalamudTextureWrap? art;
@@ -61,13 +71,20 @@ public sealed class MainWindow : Window, IDisposable
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(460, 280), MaximumSize = new Vector2(float.MaxValue, float.MaxValue) };
         email = plugin.Config.Email;
+        spaceghostEndpoint = plugin.Config.SpaceghostScrobblesEndpoint;
     }
 
     public override void Draw()
     {
         if (plugin.Radio == null || !plugin.Pandora.LoggedIn)
         {
-            DrawLogin();
+            if (ImGui.BeginTabBar("##offline-tabs"))
+            {
+                if (ImGui.BeginTabItem("Sign in")) { DrawLogin(); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Recordings")) { DrawRecordings(); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Settings")) { DrawSettings(); ImGui.EndTabItem(); }
+                ImGui.EndTabBar();
+            }
             return;
         }
 
@@ -109,6 +126,12 @@ public sealed class MainWindow : Window, IDisposable
                 if (ImGui.BeginTabItem("Settings"))
                 {
                     DrawSettings();
+                    ImGui.EndTabItem();
+                }
+
+                if (ImGui.BeginTabItem("Recordings"))
+                {
+                    DrawRecordings();
                     ImGui.EndTabItem();
                 }
 
@@ -355,6 +378,7 @@ public sealed class MainWindow : Window, IDisposable
                 var from = radio.Stations.FirstOrDefault(s => s.Id == t.StationId);
                 ImGui.TextDisabled(st.IsQuickMix && from != null ? $"on Shuffle, from {from.Name}" : $"on {st.Name}");
             }
+            else if (t.RecordingId != null) ImGui.TextDisabled("Saved recording · offline playback");
 
             var pos = plugin.Audio.Position;
             var len = t.Length > TimeSpan.Zero ? t.Length : plugin.Audio.Duration;
@@ -388,6 +412,7 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.SameLine();
         SongActions(radio, t, "now");
         ImGui.SameLine();
+        ImGui.BeginDisabled(t?.RecordingId != null);
         if (ImGuiComponents.IconButton(FontAwesomeIcon.QuestionCircle) && t != null)
         {
             explainedToken = t.Token;
@@ -399,6 +424,7 @@ public sealed class MainWindow : Window, IDisposable
         if (ImGuiComponents.IconButton(FontAwesomeIcon.ExternalLinkAlt) && t?.DetailUrl is { } url)
             Util.OpenLink(url);
         Tip("Open on Pandora");
+        ImGui.EndDisabled();
         ImGui.SameLine();
         if (ImGuiComponents.IconButton(FontAwesomeIcon.Copy) && t != null)
             ImGui.SetClipboardText(SongShare.Format(t.Title, t.Artist, t.DetailUrl));
@@ -423,6 +449,7 @@ public sealed class MainWindow : Window, IDisposable
         var past = t != null && t.Token != radio.Current?.Token;
         var loved = t?.Loved == true;
         ImGui.PushID(id);
+        ImGui.BeginDisabled(t?.RecordingId != null);
         if (ImGuiComponents.IconButton(FontAwesomeIcon.ThumbsUp, loved ? ImGuiColors.HealerGreen : null) && t != null)
             plugin.Run(ct => radio.LoveAsync(ct, t));
         Tip(loved ? "You love this one" : "Love it: more like this");
@@ -440,6 +467,7 @@ public sealed class MainWindow : Window, IDisposable
         Tip("Bookmark the song (right-click: the artist)");
         if (ImGui.IsItemClicked(ImGuiMouseButton.Right) && t != null)
             plugin.Run(ct => radio.BookmarkAsync(true, ct, t));
+        ImGui.EndDisabled();
         ImGui.PopID();
     }
 
@@ -463,7 +491,7 @@ public sealed class MainWindow : Window, IDisposable
             ImGui.TextDisabled($"— {t.Artist}");
             ImGui.SameLine();
             bool pending = historyExplanations.TryGetValue(t.Token, out var why) && !why.IsCompleted;
-            ImGui.BeginDisabled(pending);
+            ImGui.BeginDisabled(pending || t.RecordingId != null);
             if (ImGui.SmallButton($"Why this song?##why{t.Token}"))
                 historyExplanations[t.Token] = radio.ExplainAsync(cts.Token, t);
             ImGui.EndDisabled();
@@ -604,6 +632,112 @@ public sealed class MainWindow : Window, IDisposable
         _ => "genre",
     };
 
+    // ---- saved recordings ---------------------------------------------------------------------
+
+    private void DrawRecordings()
+    {
+        if (sharingRecording is { IsCompleted: true } shared)
+        {
+            try { recordingLink = shared.GetAwaiter().GetResult(); recordingMessage = "Private listening link ready. It expires in 30 days; creating another link revokes the previous one."; }
+            catch (OperationCanceledException) { recordingMessage = "Sharing canceled. Your local recording is still saved."; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or HttpRequestException or InvalidOperationException or FormatException or ArgumentException or System.Text.Json.JsonException)
+            { recordingMessage = e.Message; }
+            sharingRecording = null;
+        }
+        if (recordingAction is { IsCompleted: true } completed)
+        {
+            try { completed.GetAwaiter().GetResult(); recordingMessage = "Done."; }
+            catch (OperationCanceledException) { recordingMessage = "Canceled."; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or HttpRequestException or InvalidOperationException or FormatException or ArgumentException or System.Text.Json.JsonException)
+            { recordingMessage = e.Message; }
+            recordingAction = null;
+        }
+        var library = plugin.Recordings;
+        var save = plugin.Config.SaveRecordings;
+        if (ImGui.Checkbox("Save songs I play", ref save))
+        {
+            plugin.Config.SaveRecordings = save;
+            plugin.SaveConfig();
+        }
+        ImGui.TextWrapped("Keeps complete MP3s from future songs in your private library. Saved songs play without signing in. Upload & share sends only the recording you choose to Spaceghost Scrobbles. Nothing is uploaded automatically.");
+        var limit = plugin.Config.RecordingStorageGiB;
+        ImGui.SetNextItemWidth(180 * ImGuiHelpers.GlobalScale);
+        if (ImGui.SliderInt("Storage limit (GiB)", ref limit, 1, 100))
+        { plugin.Config.RecordingStorageGiB = limit; plugin.SaveConfig(); }
+        ImGui.TextDisabled($"{library.Entries.Count} songs · {library.TotalBytes / (1024d * 1024):0.0} MiB saved. A full library pauses new saves; existing songs are kept.");
+        if (ImGui.Button("Open recordings folder")) Util.OpenLink(library.DirectoryPath);
+        ImGui.SameLine();
+        ImGui.BeginDisabled(recordingAction != null);
+        if (ImGui.Button("Refresh")) StartRecordingAction(ct => library.LoadAsync(ct));
+        ImGui.EndDisabled();
+        if (library.Error is { } error) ImGui.TextColored(ImGuiColors.DalamudOrange, error);
+        if (plugin.Radio?.Error is { } playbackError) ImGui.TextColored(ImGuiColors.DalamudOrange, playbackError);
+        if (recordingMessage != null) ImGui.TextWrapped(recordingMessage);
+        if (recordingLink.Length > 0)
+        {
+            ImGui.InputText("Listening link", ref recordingLink, 2048, ImGuiInputTextFlags.ReadOnly);
+            if (ImGui.Button("Copy private link")) ImGui.SetClipboardText(recordingLink);
+        }
+        if (plugin.Radio is { Current.RecordingId: not null } playing)
+        {
+            ImGui.Separator();
+            DrawNowPlaying(playing);
+            if (ImGui.Button("Stop recording playback")) plugin.Control("stop");
+        }
+        ImGui.Separator();
+        ImGui.InputTextWithHint("##recording-filter", "Filter saved songs", ref recordingFilter, 256);
+        if (library.Entries.Count == 0) ImGui.TextDisabled("No recordings yet. Turn on saving, then play a station.");
+        foreach (var item in library.Entries.Where(r => (r.Title + " " + r.Artist + " " + r.Album).Contains(recordingFilter, StringComparison.CurrentCultureIgnoreCase)))
+        {
+            ImGui.PushID(item.Id);
+            if (ImGui.SmallButton("Play")) plugin.PlayRecording(item);
+            ImGui.SameLine();
+            ImGui.TextUnformatted(item.Title);
+            ImGui.TextDisabled($"{item.Artist} · {item.Album} · {item.SavedAt.LocalDateTime:g}");
+            ImGui.BeginDisabled(recordingAction != null || sharingRecording != null);
+            if (ImGui.SmallButton("Upload & share"))
+            {
+                recordingLink = "";
+                recordingMessage = "Uploading a private copy…";
+                sharingRecording = Task.Run(() => RecordingService().ShareAsync(library, item, cts.Token), cts.Token);
+            }
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Revoke link"))
+            {
+                recordingLink = "";
+                StartRecordingAction(ct => RecordingService().RevokeAsync(item, ct));
+            }
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Delete…")) deletingRecording = item.Id;
+            ImGui.EndDisabled();
+            if (deletingRecording == item.Id)
+            {
+                ImGui.TextWrapped("Delete this saved MP3 from this machine?");
+                ImGui.BeginDisabled(recordingAction != null);
+                if (ImGui.SmallButton("Delete MP3"))
+                {
+                    StartRecordingAction(ct => library.DeleteAsync(item.Id, ct));
+                    deletingRecording = null;
+                }
+                ImGui.EndDisabled();
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Keep it")) deletingRecording = null;
+            }
+            ImGui.Separator();
+            ImGui.PopID();
+        }
+    }
+
+    private void StartRecordingAction(Func<CancellationToken, Task> action)
+    {
+        recordingMessage = null;
+        recordingAction = Task.Run(() => action(cts.Token), cts.Token);
+    }
+
+    private RecordingHost RecordingService() => new(http,
+        Secrets.Unprotect(plugin.Config.ProtectedSpaceghostScrobblesToken) ?? "",
+        plugin.Config.SpaceghostScrobblesEndpoint);
+
     // ---- settings ------------------------------------------------------------------------------
 
     private void DrawSettings()
@@ -668,6 +802,9 @@ public sealed class MainWindow : Window, IDisposable
 
         ImGui.Separator();
         ImGui.TextUnformatted("Scrobbling");
+        changed |= Check("Spaceghost Scrobbles", c.ScrobbleToSpaceghost, v => c.ScrobbleToSpaceghost = v);
+        if (c.ScrobbleToSpaceghost)
+            DrawSpaceghostScrobbles(c);
         changed |= Check("Last.fm", c.ScrobbleToLastFm, v => c.ScrobbleToLastFm = v);
         if (c.ScrobbleToLastFm)
             changed |= DrawLastFm(c);
@@ -685,6 +822,80 @@ public sealed class MainWindow : Window, IDisposable
 
         if (changed)
             plugin.SaveConfig();
+    }
+
+    private void DrawSpaceghostScrobbles(Configuration c)
+    {
+        if (spaceghostCheck is { IsCompleted: true } completed)
+        {
+            try { spaceghostMessage = "Connected as " + completed.GetAwaiter().GetResult() + "."; }
+            catch (OperationCanceledException) { spaceghostMessage = "Connection check canceled."; }
+            catch (Exception e) when (e is HttpRequestException or FormatException or InvalidOperationException)
+            { spaceghostMessage = e.Message; }
+            spaceghostCheck = null;
+        }
+
+        ImGui.TextWrapped("Keep your listening history and forward listens to accounts connected in the dashboard.");
+        if (ImGui.Button("Open scrobble dashboard"))
+        {
+            var dashboard = SpaceghostScrobbles.TryNormalizeEndpoint(spaceghostEndpoint, out var normalized)
+                ? normalized + "/" : SpaceghostScrobbles.Dashboard;
+            Util.OpenLink(dashboard);
+        }
+        ImGui.TextWrapped("If the host forwards to Last.fm or ListenBrainz, leave that direct destination off here to avoid duplicate listens.");
+
+        ImGui.BeginDisabled(spaceghostCheck != null);
+        ImGui.SetNextItemWidth(350 * ImGuiHelpers.GlobalScale);
+        if (ImGui.InputText("Service URL##sgendpoint", ref spaceghostEndpoint, 2048))
+            spaceghostMessage = null;
+        var endpointValid = SpaceghostScrobbles.TryNormalizeEndpoint(spaceghostEndpoint, out var endpoint);
+        if (!endpointValid)
+            ImGui.TextWrapped("Use an HTTPS service URL without a username, query or fragment.");
+
+        var savedToken = Secrets.Unprotect(c.ProtectedSpaceghostScrobblesToken);
+        ImGui.SetNextItemWidth(350 * ImGuiHelpers.GlobalScale);
+        if (ImGui.InputTextWithHint("Client token##sgtoken", savedToken != null ? "token saved; leave blank to keep it" : "create a client token in the dashboard",
+                ref spaceghostToken, 512, ImGuiInputTextFlags.Password))
+            spaceghostMessage = null;
+        var token = spaceghostToken.Trim();
+        var tokenAvailable = token.Length > 0 || !string.IsNullOrWhiteSpace(savedToken);
+        ImGui.BeginDisabled(!endpointValid || !tokenAvailable);
+        if (ImGui.Button("Save and check connection##sgsave"))
+        {
+            try
+            {
+                var selected = token.Length > 0 ? token : savedToken!;
+                var provider = new SpaceghostScrobbles(http, selected, endpoint);
+                var protectedToken = token.Length > 0 ? Secrets.Protect(selected) : c.ProtectedSpaceghostScrobblesToken;
+                c.SpaceghostScrobblesEndpoint = endpoint;
+                c.ProtectedSpaceghostScrobblesToken = protectedToken;
+                plugin.SaveConfig();
+                spaceghostToken = "";
+                spaceghostMessage = null;
+                spaceghostCheck = provider.ValidateTokenAsync(cts.Token);
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+            { spaceghostMessage = e.Message; }
+        }
+        ImGui.EndDisabled();
+        if (savedToken != null)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Forget client token##sgforget"))
+            {
+                c.ProtectedSpaceghostScrobblesToken = "";
+                c.ScrobbleToSpaceghost = false;
+                spaceghostToken = "";
+                spaceghostMessage = "Client token removed.";
+                plugin.SaveConfig();
+            }
+        }
+        ImGui.EndDisabled();
+        if (spaceghostCheck != null)
+            ImGui.TextDisabled("Checking connection...");
+        else if (spaceghostMessage != null)
+            ImGui.TextWrapped(spaceghostMessage);
+        ImGui.TextDisabled("Checking a connection does not send a listen.");
     }
 
     private bool DrawLastFm(Configuration c)

@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Pure library: the Pandora JSON API (Blowfish, login, stations, playlists, feedback) and the radio queue. BCL only, no Dalamud, no audio. -->
+  <!-- Pandora transport and radio queue; protocol serialization/crypto uses the vendored native bridge. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>XivPiano.Core</RootNamespace>
@@ -10,4 +10,21 @@
   <ItemGroup>
     <InternalsVisibleTo Include="XivPiano.Core.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <MelodicaNativeInput Include="../../native/melodica_bridge.*;../../native/vendor/melodica/compat/*;../../native/vendor/melodica/include/*;../../native/vendor/melodica/SOURCE.json;../../tools/build-melodica.sh" />
+    <None Include="../../native/build/linux-x64/libxivpiano_melodica.so"
+          Condition="$([MSBuild]::IsOSPlatform('Linux'))" Link="libxivpiano_melodica.so"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../native/vendor/melodica/LICENSE.libpiano" Link="licenses/melodica/LICENSE.libpiano"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../native/vendor/melodica/THIRD_PARTY_NOTICES.md" Link="licenses/melodica/THIRD_PARTY_NOTICES.md"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../native/vendor/melodica/SOURCE.json" Link="licenses/melodica/SOURCE.json"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildMelodicaLinux" BeforeTargets="PrepareForBuild"
+          Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$(DesignTimeBuild)' != 'true'"
+          Inputs="@(MelodicaNativeInput)" Outputs="$(MSBuildThisFileDirectory)../../native/build/linux-x64/libxivpiano_melodica.so">
+    <Exec Command="bash &quot;$(MSBuildThisFileDirectory)../../tools/build-melodica.sh&quot; --linux" />
+  </Target>
 </Project>

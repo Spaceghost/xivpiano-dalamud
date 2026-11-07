@@ -32,7 +32,7 @@ from any artist, song or genre.
   modes**: add variety, remove a seed, take back a thumb, switch Pandora's station modes. Sort A to Z.
 - **History** of the last 20 songs, each still rateable and bookmarkable; **Up next**; **Open on Pandora**; Pandora's
   **genre stations** to browse.
-- **Scrobbling** to **Last.fm** (your own free API key) and **ListenBrainz** (your user token).
+- **Scrobbling** to **Spaceghost Scrobbles** (stored history and forwarding), **Last.fm** (your own free API key) and **ListenBrainz** (your user token).
 - **Toasts** for new songs, the keyboard's **media keys**, and Pandora's **explicit content filter**.
 - **Song-change IPC** for other plugins, alongside the existing Now Playing and playback-control gates. See [IPC contract](docs/IPC.md).
 - **The song in the server info bar**: click opens XivPiano, right-click pauses.
@@ -64,6 +64,18 @@ The window shows your plan, the client in use and each song's bitrate.
   so nothing depends on Windows codecs.
 - A Pandora account (free, Plus or Premium), in the United States.
 
+## Scrobbling
+
+To keep listening history with [Spaceghost Scrobbles](https://spacegho.st/mods/ffxiv/scrobble/), open its dashboard,
+connect any Last.fm or ListenBrainz accounts you want it to forward to, and create a client token. In XivPiano's
+**Settings → Scrobbling**, enable **Spaceghost Scrobbles**, paste the token, then choose **Save and check connection**.
+The token is encrypted for your Windows/Wine user. The connection check validates the token without submitting a listen.
+
+The host receives public song metadata and listening timestamps; Pandora credentials, stream URLs and account
+tokens are excluded. Forwarding is managed in the host dashboard. Keep a direct Last.fm/ListenBrainz destination
+off in XivPiano when the host forwards to that same account, to avoid duplicates. Direct scrobbling remains available.
+The service URL can point to another compatible HTTPS host.
+
 ## Commands
 
 | Command | Does |
@@ -87,23 +99,35 @@ They work in macros too.
 
 ## How it talks to Pandora
 
-XivPiano speaks Pandora's JSON API the way pianobar, Pithos and pydora do (documented at
-[6xq.net/pandora-apidoc](https://6xq.net/pandora-apidoc/json/)): an Android partner login, then your user login,
-with request bodies wrapped in Blowfish. Its code is its own, written from that documentation and those clients'
-behaviour. The Blowfish tables are generated from the digits of pi (`tools/blowfish-tables.py`) and checked against
-the published test vectors. Ads in a playlist are left out, as those clients do.
+XivPiano uses [melodica.h](https://github.com/Spaceghost/melodica.h)'s C libpiano implementation
+for request construction, Blowfish, login and response validation. Its source is vendored at the immutable
+`v1.0.0` commit with per-file hashes and the original MIT notice. A narrow C ABI bridge is loaded as a
+Windows x64 DLL on Windows and Wine; Linux host tests use the matching `.so`.
+
+Managed `HttpClient` supplies HTTPS. Account policy, paid-account quality fallback, extra MP3 selection,
+genre results and track timestamps remain in the managed client. Native sessions are serialized across each
+HTTP transaction and released on sign-out or unload. Sign-out and account switches cancel stale requests.
+The managed Blowfish implementation is retained as an independent test oracle; runtime requests use melodica.
+See [the native bridge contract](native/README.md) for ownership, metadata adaptation and error handling.
 
 ## Building
 
 ```sh
 tools/fetch-dalamud.sh
+tools/fetch-zig.sh
+export ZIG="${RUNNER_TEMP:-/tmp}/xivpiano-zig-0.16.0/zig"
 dotnet test tests/XivPiano.Core.Tests
 dotnet build src/XivPiano.Plugin/XivPiano.Plugin.csproj -c Release
 tools/install-dev.sh
 ```
 
+Build on Linux x86_64 with GCC and the pinned Zig cross compiler. The project builds its Linux test library
+and Windows plugin DLL automatically. `tools/test-melodica-native.sh` runs the real shared-library checks;
+`tools/test-melodica-sanitizers.sh` checks native ownership; `tools/test-melodica-managed-windows.sh` runs
+the full offline managed suite from an extracted Windows deployment under Wine/Xvfb.
+
 `XIVPIANO_LIVE=1 dotnet test tests/XivPiano.Core.Tests` also checks the partner login against Pandora itself.
 
 ## License
 
-MIT. NAudio and NLayer are MIT as well.
+MIT. NAudio, NLayer and melodica/libpiano are MIT as well. The plugin package includes melodica's retained notices.

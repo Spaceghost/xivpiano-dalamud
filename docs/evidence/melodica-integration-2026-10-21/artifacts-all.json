@@ -1,0 +1,16 @@
+{
+  "compilers": {
+    "linux": "gcc (GCC) 16.2.1 20260819 (Red Hat 16.2.1-2)",
+    "windows": "0.16.0"
+  },
+  "host": "Linux-6.18.54-0-lts-x86_64-with-glibc2.43",
+  "sha256": {
+    "native/build/linux-x64/libxivpiano_melodica.so": "5f6f92b628b719bc542ae3edaf667c5c3f9a63a16265e6caac40cf763f2fb055",
+    "native/build/win-x64/libxivpiano_melodica.dll.a": "43339358d5fdc78e2d10d9b64d6d9f13a52043c5b88c788265c1a2d61a41ab82",
+    "native/melodica_bridge.c": "f85a46ef713cd054770ff6f6499627f99519ff2b6dd6af89c75c263e996eedfa",
+    "native/melodica_bridge.h": "678f2bad5a95b6e71ebd3544140aacebf9e1598cddbe947771e2f75ca221d07a",
+    "native/vendor/melodica/SOURCE.json": "f96e609abb979cd398e5c4041e2d7ebde70cb1e06d20da88613421c2d677f0ab",
+    "runtimes/win-x64/native/xivpiano_melodica.dll": "aa8e0c8b52e0c84a6eb0b2ef90b650421b7952d9b330fbbd8462bcca0912da39"
+  },
+  "target": "--all"
+}

@@ -1,0 +1,11 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Dalamud.NET.Sdk: root at /opt/xivpiano-tools/dalamud15/
+  XivPiano.Core -> /work/xivpiano-integration/native/build/plugin-artifacts/bin/XivPiano.Core/release/XivPiano.Core.dll
+  XivPiano.Plugin -> /work/xivpiano-integration/native/build/plugin-artifacts/bin/XivPiano.Plugin/release/XivPiano.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:03.49

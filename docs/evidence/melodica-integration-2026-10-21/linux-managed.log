@@ -1,0 +1,8 @@
+  XivPiano.Core -> /work/xivpiano-integration/native/build/loader-managed/bin/XivPiano.Core/release/XivPiano.Core.dll
+  XivPiano.Core.Tests -> /work/xivpiano-integration/native/build/loader-managed/bin/XivPiano.Core.Tests/release/XivPiano.Core.Tests.dll
+Test run for /work/xivpiano-integration/native/build/loader-managed/bin/XivPiano.Core.Tests/release/XivPiano.Core.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.87]     XivPiano.Core.Tests.PandoraClientTests.LivePartnerLogin [SKIP]
+  Skipped XivPiano.Core.Tests.PandoraClientTests.LivePartnerLogin [1 ms]
+
+Passed!  - Failed:     0, Passed:   115, Skipped:     1, Total:   116, Duration: 384 ms - XivPiano.Core.Tests.dll (net10.0)

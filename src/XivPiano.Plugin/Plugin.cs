@@ -47,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(60) };
     private readonly CancellationTokenSource cts = new();
     private readonly MainWindow window;
+    private readonly Task recordingsReady;
     private readonly ICallGateProvider<string> nowPlayingGate;
     private readonly ICallGateProvider<string> audioFeaturesGate;
     private static readonly JsonSerializerOptions AudioFeatureJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -83,8 +84,16 @@ public sealed class Plugin : IDalamudPlugin
         Config = pi.GetPluginConfig() as Configuration ?? new Configuration();
         Config.Clamp();
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"XivPiano/{typeof(Plugin).Assembly.GetName().Version?.ToString(3)}");
-        Pandora = new PandoraClient(http) { Quality = Config.Quality, ClientChoice = Config.Client };
-        Audio = new AudioOut(http) { Volume = Config.Volume };
+        var nativeLibraryPath = Path.Combine(pi.AssemblyLocation.DirectoryName!,
+            "runtimes", "win-x64", "native", "xivpiano_melodica.dll");
+        Pandora = new PandoraClient(http, nativeLibraryPath: nativeLibraryPath)
+        {
+            Quality = Config.Quality,
+            ClientChoice = Config.Client,
+        };
+        Recordings = new RecordingLibrary(Path.Combine(pi.GetPluginConfigDirectory(), "recordings"));
+        recordingsReady = LoadRecordingsAsync();
+        Audio = new AudioOut(http, Recordings) { Volume = Config.Volume, SaveDownloaded = SaveDownloadedAsync };
 
         window = new MainWindow(this, textures, http);
         windows.AddWindow(window);
@@ -120,6 +129,46 @@ public sealed class Plugin : IDalamudPlugin
     public PandoraClient Pandora { get; }
 
     public AudioOut Audio { get; }
+
+    public RecordingLibrary Recordings { get; }
+
+    private async Task LoadRecordingsAsync()
+    {
+        try { await Recordings.LoadAsync(cts.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { Recordings.ReportError("The recording library could not be opened: " + e.Message); }
+    }
+
+    private async Task SaveDownloadedAsync(Track track, ReadOnlyMemory<byte> bytes, CancellationToken ct)
+    {
+        if (!Config.SaveRecordings) return;
+        try
+        {
+            await recordingsReady.ConfigureAwait(false);
+            await Recordings.SaveAsync(track, bytes, (long)Config.RecordingStorageGiB * 1024 * 1024 * 1024, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { Recordings.ReportError("Could not save this song: " + e.Message); }
+    }
+
+    public void PlayRecording(SavedRecording recording)
+    {
+        if (Radio == null)
+        {
+            Radio = new Radio(Pandora, Audio);
+            Radio.Changed += OnRadioChanged;
+        }
+        var owner = Radio;
+        automaticPause.ManualChange();
+        Run(async ct =>
+        {
+            await recordingsReady.ConfigureAwait(false);
+            if (ReferenceEquals(Radio, owner))
+                await owner.PlayRecordingAsync(recording, ct).ConfigureAwait(false);
+        });
+    }
 
     public Radio? Radio { get; private set; }
 
@@ -213,6 +262,11 @@ public sealed class Plugin : IDalamudPlugin
             list.Add(new LastFm(http, Config.LastFmApiKey, secret, session));
         if (Config.ScrobbleToListenBrainz && Secrets.Unprotect(Config.ProtectedListenBrainzToken) is { } token)
             list.Add(new ListenBrainz(http, token));
+        if (Config.ScrobbleToSpaceghost &&
+            SpaceghostScrobbles.TryNormalizeEndpoint(Config.SpaceghostScrobblesEndpoint, out var endpoint) &&
+            Secrets.Unprotect(Config.ProtectedSpaceghostScrobblesToken) is { Length: > 0 } clientToken &&
+            !clientToken.Any(char.IsWhiteSpace) && !clientToken.Any(char.IsControl))
+            list.Add(new SpaceghostScrobbles(http, clientToken, endpoint));
         return list;
     }
 
@@ -488,6 +542,7 @@ public sealed class Plugin : IDalamudPlugin
         dtr?.Remove();
         Radio?.Dispose();
         Audio.Dispose();
+        Pandora.Dispose();
         windows.RemoveAllWindows();
         window.Dispose();
         http.Dispose();

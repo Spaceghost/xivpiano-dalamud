@@ -1,0 +1,2 @@
+# Keep raw compiler, test and packaging evidence byte for byte.
+docs/evidence/melodica-integration-2026-10-21/** -whitespace

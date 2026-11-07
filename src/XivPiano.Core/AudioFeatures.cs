@@ -207,7 +207,8 @@ public sealed class AudioFeatures
                 if (suppressNextOnset) { suppressedSequence = frame.Sequence; suppressNextOnset = false; }
                 return new(1, streamId, frame.Sequence, playing, true, age, playedSeconds,
                     frame.Rms, frame.Peak, frame.Low, frame.Mid, frame.High,
-                    frame.Sequence == suppressedSequence ? 0 : frame.Onset) { Spectrum = frame.Spectrum };
+                    frame.Sequence == suppressedSequence ? 0 : frame.Onset)
+                { Spectrum = frame.Spectrum };
             }
             return AudioFeatureSnapshot.Silent(streamId, playing, playedSeconds);
         }

@@ -44,6 +44,7 @@ MANIFEST="$ROOT/src/XivPiano.Plugin/XivPiano.json"
   exit 1
 }
 [[ -f "$MANIFEST" ]] || { echo "error: $MANIFEST missing" >&2; exit 1; }
+python3 "$ROOT/tools/check-native-package.py" "$BIN"
 
 VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["AssemblyVersion"])' "$MANIFEST")"
 [[ -n "$VERSION" ]] || { echo "error: no AssemblyVersion in $MANIFEST" >&2; exit 1; }
@@ -63,7 +64,8 @@ mkdir -p "$STAGE/XivPiano" "$OUT"
 ( cd "$BIN" && find . -type f -print0 | while IFS= read -r -d '' f; do
     # A case pattern's * matches slashes too, so the narrow paths come first.
     case "$f" in
-      ./runtimes/win-x64/native/*) ;;                                  # native code for the game's process, if any
+      ./runtimes/win-x64/native/xivpiano_melodica.dll) ;;
+      ./licenses/melodica/LICENSE.libpiano | ./licenses/melodica/THIRD_PARTY_NOTICES.md | ./licenses/melodica/SOURCE.json) ;;
       ./runtimes/* | ./XivPiano/*) continue ;;                          # other platforms; DalamudPackager's own staging copy
       ./*.deps.json | ./*.runtimeconfig.json | *.pdb | *.zip) continue ;;
       ./*/*) continue ;;                                               # nothing else from a subfolder
@@ -90,6 +92,7 @@ printf '%s\n' "$ZIP_ENTRIES"
 for want in XivPiano.dll XivPiano.Core.dll XivPiano.json NAudio.Core.dll NAudio.Midi.dll NAudio.WinMM.dll NLayer.dll System.Numerics.Tensors.dll ; do
   printf '%s\n' "$ZIP_ENTRIES" | grep -qxF "$want" || { echo "error: $want is not in the zip" >&2; exit 1; }
 done
+python3 "$ROOT/tools/check-native-package.py" "$OUT/latest.zip"
 
 # The listing: the shipped manifest plus the fields a plugin repository adds.
 CHANNEL=stable
