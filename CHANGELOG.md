@@ -13,7 +13,7 @@ Statuses mean the same thing in every one of these mods:
 * **BETA** — merged, but not yet verified in game.
 * **SOON** — still being built.
 
-## [unreleased] — Rhythm chart look-ahead
+## [Unreleased] — Rhythm chart look-ahead
 
 BETA: offline checks pass; live musical acceptance pending.
 

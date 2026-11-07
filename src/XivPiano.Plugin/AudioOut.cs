@@ -59,17 +59,21 @@ public sealed class AudioOut(HttpClient http, RecordingLibrary? recordings = nul
 
     public SongRhythmTimeline ReadRhythm(double lookAhead)
     {
-        if (!gate.TryEnter()) return SongRhythmAnalysis.Read(Interlocked.Read(ref streamId),false,0,0,null,lookAhead);
-        try {
+        if (!gate.TryEnter()) return SongRhythmAnalysis.Read(Interlocked.Read(ref streamId), false, 0, 0, null, lookAhead);
+        try
+        {
             if (output is not { } device || source is not { } current)
-                return SongRhythmAnalysis.Read(streamId,false,0,0,null,lookAhead);
+                return SongRhythmAnalysis.Read(streamId, false, 0, 0, null, lookAhead);
             var rate = device.OutputWaveFormat.AverageBytesPerSecond;
-            var position = rate > 0 ? (double)device.GetPosition()/rate : 0;
-            return SongRhythmAnalysis.Read(current.StreamId,device.PlaybackState == PlaybackState.Playing,
-                position,current.Duration.TotalSeconds,current.Rhythm,lookAhead);
-        } catch (Exception e) when (e is MmException or ObjectDisposedException or InvalidOperationException) {
-            return SongRhythmAnalysis.Read(streamId,false,0,0,null,lookAhead);
-        } finally { gate.Exit(); }
+            var position = rate > 0 ? (double)device.GetPosition() / rate : 0;
+            return SongRhythmAnalysis.Read(current.StreamId, device.PlaybackState == PlaybackState.Playing,
+                position, current.Duration.TotalSeconds, current.Rhythm, lookAhead);
+        }
+        catch (Exception e) when (e is MmException or ObjectDisposedException or InvalidOperationException)
+        {
+            return SongRhythmAnalysis.Read(streamId, false, 0, 0, null, lookAhead);
+        }
+        finally { gate.Exit(); }
     }
 
     public bool Paused => output?.PlaybackState == PlaybackState.Paused;
@@ -226,24 +230,28 @@ public sealed class AudioOut(HttpClient http, RecordingLibrary? recordings = nul
         public void AnalyzeSong(byte[] bytes)
         {
             var token = analysisCancellation.Token;
-            _ = Task.Run(() => {
-                try {
+            _ = Task.Run(() =>
+            {
+                try
+                {
                     // Independent decoder: never seek, retain PCM from or contend with the sound callback.
-                    using var decoder = new MpegFile(new MemoryStream(bytes,writable:false));
-                    var analysis = new SongRhythmAnalysis(decoder.SampleRate,decoder.Channels);
+                    using var decoder = new MpegFile(new MemoryStream(bytes, writable: false));
+                    var analysis = new SongRhythmAnalysis(decoder.SampleRate, decoder.Channels);
                     var samples = new float[decoder.SampleRate / 4 * decoder.Channels];
                     var decoded = 0d;
-                    while (decoded < SongRhythmAnalysis.MaximumSeconds) {
+                    while (decoded < SongRhythmAnalysis.MaximumSeconds)
+                    {
                         token.ThrowIfCancellationRequested();
-                        var count = decoder.ReadSamples(samples,0,samples.Length);
+                        var count = decoder.ReadSamples(samples, 0, samples.Length);
                         if (count == 0) break;
-                        analysis.Push(samples.AsSpan(0,count));
+                        analysis.Push(samples.AsSpan(0, count));
                         decoded += (double)count / decoder.Channels / decoder.SampleRate;
                     }
                     token.ThrowIfCancellationRequested();
-                    Volatile.Write(ref rhythm,analysis.Finish());
-                } catch { /* Optional chart analysis must never break music playback. */ }
-            },token);
+                    Volatile.Write(ref rhythm, analysis.Finish());
+                }
+                catch { /* Optional chart analysis must never break music playback. */ }
+            }, token);
         }
         public AudioFeatures Features { get; } = new(mpeg.SampleRate, mpeg.Channels, streamId);
         private volatile bool featuresAvailable = true;

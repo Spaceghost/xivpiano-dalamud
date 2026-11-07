@@ -113,7 +113,7 @@ public sealed class Plugin : IDalamudPlugin
         nowPlayingGate.RegisterFunc(NowPlayingJson);
         audioFeaturesGate = pi.GetIpcProvider<string>("XivPiano.AudioFeatures.v1");
         audioFeaturesGate.RegisterFunc(() => JsonSerializer.Serialize(Audio.ReadFeatures(), AudioFeatureJson));
-        rhythmTimelineGate = pi.GetIpcProvider<double,string>("XivPiano.RhythmTimeline.v1");
+        rhythmTimelineGate = pi.GetIpcProvider<double, string>("XivPiano.RhythmTimeline.v1");
         rhythmTimelineGate.RegisterFunc(seconds => JsonSerializer.Serialize(Audio.ReadRhythm(seconds), AudioFeatureJson));
         songChangedGate = pi.GetIpcProvider<string, object>("XivPiano.SongChanged");
         controlGate = pi.GetIpcProvider<string, bool>("XivPiano.Control");
