@@ -235,6 +235,17 @@ public class ScrobblingTests
         Assert.Contains("api_sig=", sent[^1]);
     }
 
+    [Theory]
+    [InlineData(null, "https://spacegho.st/scrobble")]
+    [InlineData("https://spacegho.st/mods/ffxiv/scrobble", "https://spacegho.st/scrobble")]
+    [InlineData("https://spacegho.st/mods/ffxiv/scrobble/", "https://spacegho.st/scrobble")]
+    [InlineData("https://spacegho.st/scrobble", "https://spacegho.st/scrobble")]
+    [InlineData("https://scrobbles.example.net/api", "https://scrobbles.example.net/api")]
+    [InlineData("http://not-https.example", "http://not-https.example")]
+    [InlineData("", "")]
+    public void SpaceghostEndpointMovesOffTheLegacyAddressOnly(string? saved, string expected) =>
+        Assert.Equal(expected, SpaceghostScrobbles.Current(saved));
+
     [Fact]
     public void ListenBrainzBody()
     {

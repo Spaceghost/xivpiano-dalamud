@@ -11,6 +11,10 @@
         {
           "status": "beta",
           "text": "A bounded, read-only XivPiano.RhythmTimeline.v1 IPC feed exposes up to 30 seconds of future song onsets, aligned to hardware playback time. A separate background decoder analyzes the downloaded song without seeking or blocking playback. XivSpell uses the map for a longer note approach."
+        },
+        {
+          "status": "beta",
+          "text": "Spaceghost Scrobbles now uses its own address, spacegho.st/scrobble. Settings saved with the old spacegho.st/mods/ffxiv/scrobble address move over by themselves; a self-hosted address is left alone."
         }
       ]
     },

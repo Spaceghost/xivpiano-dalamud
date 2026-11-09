@@ -45,7 +45,7 @@ only capability hashes and checks expiry, revocation and account bans before
 serving audio. Range requests support seeking without loading the entire MP3.
 Already downloaded audio stays with its recipient.
 
-The [dashboard](https://spacegho.st/mods/ffxiv/scrobble/) lists hosted recordings,
+The [dashboard](https://spacegho.st/scrobble/) lists hosted recordings,
 plays them, creates/revokes links and deletes hosted MP3s. Local deletion and
 hosted deletion are independent. Removing listen history does not remove recordings.
 Failed uploads keep the local MP3 for retry; unfinished quota reservations expire

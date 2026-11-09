@@ -185,8 +185,11 @@ public sealed class ListenBrainz(HttpClient http, string userToken, string endpo
 /// </summary>
 public sealed class SpaceghostScrobbles : IScrobbler
 {
-    public const string DefaultEndpoint = "https://spacegho.st/mods/ffxiv/scrobble";
+    public const string DefaultEndpoint = "https://spacegho.st/scrobble";
     public const string Dashboard = DefaultEndpoint + "/";
+
+    /// <summary>The service's first address, under the game-mod pages. It still answers, but saved settings move off it.</summary>
+    public const string LegacyEndpoint = "https://spacegho.st/mods/ffxiv/scrobble";
     private readonly HttpClient http;
     private readonly string clientToken;
     private readonly string endpoint;
@@ -214,6 +217,19 @@ public sealed class SpaceghostScrobbles : IScrobbler
             return false;
         endpoint = uri.AbsoluteUri.TrimEnd('/');
         return true;
+    }
+
+    /// <summary>
+    /// The endpoint to use for a saved setting: the default when nothing is saved, the current address when the
+    /// legacy one is saved, and otherwise the saved value unchanged (a self-hosted service, or a value the settings
+    /// window will reject; it is never swapped for Spaceghost's).
+    /// </summary>
+    public static string Current(string? saved)
+    {
+        if (saved is null)
+            return DefaultEndpoint;
+        return TryNormalizeEndpoint(saved, out var endpoint) &&
+            string.Equals(endpoint, LegacyEndpoint, StringComparison.OrdinalIgnoreCase) ? DefaultEndpoint : saved;
     }
 
     public Task NowPlayingAsync(Track track, CancellationToken ct) => SubmitAsync("playing_now", track, null, ct);

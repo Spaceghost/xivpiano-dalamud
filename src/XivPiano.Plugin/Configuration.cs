@@ -87,7 +87,7 @@ public sealed class Configuration : IPluginConfiguration
     {
         GameMusicDutyTypes ??= [];
         RecordingStorageGiB = Math.Clamp(RecordingStorageGiB, 1, 100);
-        SpaceghostScrobblesEndpoint ??= XivPiano.Core.SpaceghostScrobbles.DefaultEndpoint;
+        SpaceghostScrobblesEndpoint = XivPiano.Core.SpaceghostScrobbles.Current(SpaceghostScrobblesEndpoint);
         ProtectedSpaceghostScrobblesToken ??= "";
         Volume = float.IsFinite(Volume) ? Math.Clamp(Volume, 0f, 1f) : 0.6f;
         DuckTo = float.IsFinite(DuckTo) ? Math.Clamp(DuckTo, 0f, 1f) : 0.25f;

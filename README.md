@@ -66,7 +66,7 @@ The window shows your plan, the client in use and each song's bitrate.
 
 ## Scrobbling
 
-To keep listening history with [Spaceghost Scrobbles](https://spacegho.st/mods/ffxiv/scrobble/), open its dashboard,
+To keep listening history with [Spaceghost Scrobbles](https://spacegho.st/scrobble/), open its dashboard,
 connect any Last.fm or ListenBrainz accounts you want it to forward to, and create a client token. In XivPiano's
 **Settings → Scrobbling**, enable **Spaceghost Scrobbles**, paste the token, then choose **Save and check connection**.
 The token is encrypted for your Windows/Wine user. The connection check validates the token without submitting a listen.

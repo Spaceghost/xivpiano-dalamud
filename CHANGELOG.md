@@ -18,6 +18,7 @@ Statuses mean the same thing in every one of these mods:
 BETA: offline checks pass; live musical acceptance pending.
 
 * A bounded, read-only XivPiano.RhythmTimeline.v1 IPC feed exposes up to 30 seconds of future song onsets, aligned to hardware playback time. A separate background decoder analyzes the downloaded song without seeking or blocking playback. XivSpell uses the map for a longer note approach.
+* Spaceghost Scrobbles now uses its own address, spacegho.st/scrobble. Settings saved with the old spacegho.st/mods/ffxiv/scrobble address move over by themselves; a self-hosted address is left alone.
 
 ## [0.1.2] — Released 2026-10-24
 
