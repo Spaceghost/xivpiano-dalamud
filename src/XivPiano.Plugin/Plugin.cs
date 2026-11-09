@@ -63,10 +63,11 @@ public sealed class Plugin : IDalamudPlugin
     private string? announcedToken;
 
     public Plugin(IDalamudPluginInterface pi, IPluginLog log, ICommandManager commands, IChatGui chat, ICondition condition,
-        IGameConfig gameConfig, IFramework framework, IDtrBar dtrBar, ITextureProvider textures, IToastGui toasts, IKeyState keys, IAddonLifecycle addonLifecycle, IGameGui gameGui, IClientState clientState, IDataManager data)
+        IGameConfig gameConfig, IFramework framework, IDtrBar dtrBar, ITextureProvider textures, IToastGui toasts, IKeyState keys, IAddonLifecycle addonLifecycle, IGameGui gameGui, IClientState clientState, IDataManager data, IObjectTable objectTable)
     {
         this.clientState = clientState;
         this.data = data;
+        Overlay = new EorzeaOverlay(this, gameGui, clientState, objectTable, data, log);
         this.gameGui = gameGui;
         this.addonLifecycle = addonLifecycle;
         addonLifecycle.RegisterListener(AddonEvent.PostSetup, "Talk", OnTalk);
@@ -101,6 +102,7 @@ public sealed class Plugin : IDalamudPlugin
         StationWindow = new StationWindow(this);
         windows.AddWindow(StationWindow);
         pi.UiBuilder.Draw += windows.Draw;
+        pi.UiBuilder.Draw += Overlay.Draw;
         pi.UiBuilder.OpenMainUi += ToggleWindow;
         pi.UiBuilder.OpenConfigUi += ToggleWindow;
         commands.AddHandler(Command, new CommandInfo(OnCommand)
@@ -256,8 +258,19 @@ public sealed class Plugin : IDalamudPlugin
             ExplicitFilter = enabled;
         });
 
-    /// <summary>The scrobblers that are switched on and set up.</summary>
-    public IReadOnlyList<IScrobbler> Scrobblers()
+    internal EorzeaOverlay Overlay { get; }
+
+    /// <summary>The Spaceghost Scrobbles client when it is switched on and set up, else null.</summary>
+    internal SpaceghostScrobbles? Spaceghost(XivLocation? where = null) =>
+        Config.ScrobbleToSpaceghost &&
+        SpaceghostScrobbles.TryNormalizeEndpoint(Config.SpaceghostScrobblesEndpoint, out var endpoint) &&
+        Secrets.Unprotect(Config.ProtectedSpaceghostScrobblesToken) is { Length: > 0 } clientToken &&
+        !clientToken.Any(char.IsWhiteSpace) && !clientToken.Any(char.IsControl)
+            ? new SpaceghostScrobbles(http, clientToken, endpoint) { Location = where }
+            : null;
+
+    /// <summary>The scrobblers that are switched on and set up. <paramref name="where"/> is read on the framework thread.</summary>
+    public IReadOnlyList<IScrobbler> Scrobblers(XivLocation? where = null)
     {
         var list = new List<IScrobbler>();
         if (Config.ScrobbleToLastFm && Config.LastFmApiKey.Length > 0 && Secrets.Unprotect(Config.ProtectedLastFmSecret) is { } secret
@@ -265,17 +278,16 @@ public sealed class Plugin : IDalamudPlugin
             list.Add(new LastFm(http, Config.LastFmApiKey, secret, session));
         if (Config.ScrobbleToListenBrainz && Secrets.Unprotect(Config.ProtectedListenBrainzToken) is { } token)
             list.Add(new ListenBrainz(http, token));
-        if (Config.ScrobbleToSpaceghost &&
-            SpaceghostScrobbles.TryNormalizeEndpoint(Config.SpaceghostScrobblesEndpoint, out var endpoint) &&
-            Secrets.Unprotect(Config.ProtectedSpaceghostScrobblesToken) is { Length: > 0 } clientToken &&
-            !clientToken.Any(char.IsWhiteSpace) && !clientToken.Any(char.IsControl))
-            list.Add(new SpaceghostScrobbles(http, clientToken, endpoint));
+        if (Spaceghost(where) is { } spaceghost)
+            list.Add(spaceghost);
         return list;
     }
 
     private void Report(Func<IScrobbler, Task> call)
     {
-        foreach (var scrobbler in Scrobblers())
+        // Called from the framework update: the only thread that may read the player's position.
+        var where = Config.ScrobbleToSpaceghost ? Overlay.CurrentLocation() : null;
+        foreach (var scrobbler in Scrobblers(where))
         {
             Run(async _ =>
             {
@@ -538,6 +550,8 @@ public sealed class Plugin : IDalamudPlugin
         controlGate.UnregisterFunc();
         commands.RemoveHandler(Command);
         pi.UiBuilder.Draw -= windows.Draw;
+        pi.UiBuilder.Draw -= Overlay.Draw;
+        Overlay.Dispose();
         pi.UiBuilder.OpenMainUi -= ToggleWindow;
         pi.UiBuilder.OpenConfigUi -= ToggleWindow;
         cts.Cancel();

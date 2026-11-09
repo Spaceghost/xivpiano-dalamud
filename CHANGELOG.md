@@ -17,6 +17,7 @@ Statuses mean the same thing in every one of these mods:
 
 BETA: offline checks pass; live musical acceptance pending.
 
+* Eorzea map for Spaceghost Scrobbles: listens carry your zone and a 3-unit map cell (switch in Settings, on by default; the service keeps the cell, never your exact position). A heat overlay on the in-game map shows where people listened this week. Optionally, crew members can share what they are playing: a small note appears over their character for other sharing crew. Sharing is off by default, needs a GitHub-linked account, and is removed from the service the moment you turn it off. Cosmetic only: it reads game state and draws, with no automation or packets. Not yet seen working in game; the map-area detection can be checked and nudged in Settings.
 * A bounded, read-only XivPiano.RhythmTimeline.v1 IPC feed exposes up to 30 seconds of future song onsets, aligned to hardware playback time. A separate background decoder analyzes the downloaded song without seeking or blocking playback. XivSpell uses the map for a longer note approach.
 * Spaceghost Scrobbles now uses its own address, spacegho.st/scrobble. Settings saved with the old spacegho.st/mods/ffxiv/scrobble address move over by themselves; a self-hosted address is left alone.
 

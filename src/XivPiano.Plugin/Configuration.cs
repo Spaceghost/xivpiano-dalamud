@@ -83,12 +83,37 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>The hosted scrobbling client token, encrypted for this Windows/Wine user.</summary>
     public string ProtectedSpaceghostScrobblesToken { get; set; } = "";
 
+    /// <summary>Send the zone and a map cell with listens and now-playing to Spaceghost Scrobbles.</summary>
+    public bool SendLocation { get; set; } = true;
+
+    /// <summary>Tint the in-game map with where people listen (needs Spaceghost Scrobbles).</summary>
+    public bool ShowMapOverlay { get; set; } = true;
+
+    /// <summary>Show a note over nearby characters who are listening and share it (needs SharePresence).</summary>
+    public bool ShowWorldIndicators { get; set; } = true;
+
+    /// <summary>Consent, off by default: crew members with this on see what you play above your character.</summary>
+    public bool SharePresence { get; set; }
+
+    /// <summary>Calibration for the map overlay: nudge in pixels, scale of the detected map area.</summary>
+    public float MapNudgeX { get; set; }
+
+    public float MapNudgeY { get; set; }
+
+    public float MapScale { get; set; } = 1f;
+
+    /// <summary>Outline the map area the overlay detected, for calibration.</summary>
+    public bool ShowMapArea { get; set; }
+
     public void Clamp()
     {
         GameMusicDutyTypes ??= [];
         RecordingStorageGiB = Math.Clamp(RecordingStorageGiB, 1, 100);
         SpaceghostScrobblesEndpoint = XivPiano.Core.SpaceghostScrobbles.Current(SpaceghostScrobblesEndpoint);
         ProtectedSpaceghostScrobblesToken ??= "";
+        MapNudgeX = float.IsFinite(MapNudgeX) ? Math.Clamp(MapNudgeX, -200f, 200f) : 0f;
+        MapNudgeY = float.IsFinite(MapNudgeY) ? Math.Clamp(MapNudgeY, -200f, 200f) : 0f;
+        MapScale = float.IsFinite(MapScale) ? Math.Clamp(MapScale, 0.5f, 1.5f) : 1f;
         Volume = float.IsFinite(Volume) ? Math.Clamp(Volume, 0f, 1f) : 0.6f;
         DuckTo = float.IsFinite(DuckTo) ? Math.Clamp(DuckTo, 0f, 1f) : 0.25f;
     }

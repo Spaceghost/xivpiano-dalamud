@@ -74,6 +74,23 @@ The token is encrypted for your Windows/Wine user. The connection check validate
 The host receives public song metadata and listening timestamps; Pandora credentials, stream URLs and account
 tokens are excluded. Forwarding is managed in the host dashboard. Keep a direct Last.fm/ListenBrainz destination
 off in XivPiano when the host forwards to that same account, to avoid duplicates. Direct scrobbling remains available.
+
+### Eorzea map and in-world presence (BETA, not yet seen working in game)
+
+With Spaceghost Scrobbles on, listens also carry the zone (TerritoryType) and the 3-unit map cell you are in; the
+service keeps the cell, never the exact position. XivPiano draws, with ImGui only (no automation, no packets, no game
+data written):
+
+* a heat overlay on the in-game map (the `AreaMap` window) for the cells where people listened this week, from
+  `GET /scrobble/api/views/ffxiv/eorzea`. The map picture is located by a heuristic; **Settings** can outline the
+  detected area and nudge it;
+* a small note with the song over nearby characters whose players share it. Sharing is a separate switch, **off by
+  default**, for GitHub-linked crew members only, and viewing needs it on too. XivPiano sends a plain hash of
+  your character name and home world (`xivpiano-presence-v1|world|name`, 16 bytes of SHA-256) as `xiv_char`, and matches
+  the hashes of the characters around you against the crew feed (`GET /scrobble/1/xiv/presence`, polled every 20 s).
+  No name or position of yours is sent for this. Turning it off clears the hash on the service.
+
+The data contract is `docs/VIEWS.md` in [spaceghost-scrobble](https://github.com/Spaceghost/spaceghost-scrobble).
 The service URL can point to another compatible HTTPS host.
 
 ## Commands

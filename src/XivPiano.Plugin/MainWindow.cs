@@ -896,6 +896,45 @@ public sealed class MainWindow : Window, IDisposable
         else if (spaceghostMessage != null)
             ImGui.TextWrapped(spaceghostMessage);
         ImGui.TextDisabled("Checking a connection does not send a listen.");
+        DrawEorzea(c);
+    }
+
+    /// <summary>Eorzea map and in-world presence settings (all cosmetic: they read the game and draw, nothing more).</summary>
+    private void DrawEorzea(Configuration c)
+    {
+        ImGui.Separator();
+        ImGui.TextUnformatted("Eorzea map");
+        var changed = false;
+        changed |= Check("Send my zone and map cell with listens##xivloc", c.SendLocation, v => c.SendLocation = v);
+        Tip("Adds the zone and the 3-unit map cell you are in to each listen. The service keeps the cell, never your exact position. It shows only in the aggregate map of people who share on the leaderboard.");
+        changed |= Check("Show listening on the in-game map##xivmap", c.ShowMapOverlay, v => c.ShowMapOverlay = v);
+        Tip("Tints the map cells where people listened this week. Drawn over the map window; no game data is changed.");
+        if (c.ShowMapOverlay)
+        {
+            ImGui.TextDisabled(plugin.Overlay.Status.Length > 0 ? plugin.Overlay.Status : "Open the in-game map (M) to see it.");
+            changed |= Check("Outline the detected map area (for calibration)##xivarea", c.ShowMapArea, v => c.ShowMapArea = v);
+            if (c.ShowMapArea)
+            {
+                ImGui.TextDisabled(plugin.Overlay.MapAreaFound ? "Yellow outline = where the overlay thinks the map picture is." : "Map window not found (is it open?).");
+                var (x, y, scale) = (c.MapNudgeX, c.MapNudgeY, c.MapScale);
+                ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                changed |= ImGui.SliderFloat("Nudge right##xivnx", ref x, -100f, 100f);
+                ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                changed |= ImGui.SliderFloat("Nudge down##xivny", ref y, -100f, 100f);
+                ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                changed |= ImGui.SliderFloat("Size##xivscale", ref scale, 0.8f, 1.2f);
+                (c.MapNudgeX, c.MapNudgeY, c.MapScale) = (x, y, scale);
+            }
+        }
+
+        changed |= Check("Show crew listeners over their characters##xivworld", c.ShowWorldIndicators, v => c.ShowWorldIndicators = v);
+        Tip("A small note with the song over nearby characters whose players share their listening. Needs the switch below on, for you too.");
+        changed |= Check("Share what I am playing above my character (crew only)##xivshare", c.SharePresence, v => c.SharePresence = v);
+        Tip("Off by default. When on, crew members who also share can see your song above your character in game, matched by a hash of your character name and home world. Needs a GitHub-linked account that shows itself to the crew with live listening on. Turn it off any time; it is removed from the service at once.");
+        if (plugin.Overlay.PresenceStatus.Length > 0)
+            ImGui.TextDisabled(plugin.Overlay.PresenceStatus);
+        if (changed)
+            plugin.SaveConfig();
     }
 
     private bool DrawLastFm(Configuration c)

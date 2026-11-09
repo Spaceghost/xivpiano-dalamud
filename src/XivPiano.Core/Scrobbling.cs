@@ -144,7 +144,7 @@ public sealed class ListenBrainz(HttpClient http, string userToken, string endpo
 
     public Task ScrobbleAsync(Track track, DateTimeOffset startedAt, CancellationToken ct) => SubmitAsync("single", track, startedAt, ct);
 
-    internal static JsonObject Body(string type, Track t, DateTimeOffset? at)
+    internal static JsonObject Body(string type, Track t, DateTimeOffset? at, XivLocation? where = null)
     {
         var meta = new JsonObject
         {
@@ -160,6 +160,18 @@ public sealed class ListenBrainz(HttpClient http, string userToken, string endpo
         };
         if (t.Album.Length > 0)
             meta["release_name"] = t.Album;
+        if (where is { } w)
+        {
+            var info = (JsonObject)meta["additional_info"]!;
+            info["xiv_territory"] = w.Territory;
+            info["xiv_map"] = w.Map;
+            if (w.Position is { } p)
+            {
+                info["xiv_x"] = Math.Round(p.X, 1);
+                info["xiv_y"] = Math.Round(p.Y, 1);
+            }
+        }
+
         var listen = new JsonObject { ["track_metadata"] = meta };
         if (at is { } a)
             listen["listened_at"] = a.ToUnixTimeSeconds();
@@ -193,6 +205,9 @@ public sealed class SpaceghostScrobbles : IScrobbler
     private readonly HttpClient http;
     private readonly string clientToken;
     private readonly string endpoint;
+
+    /// <summary>Where the player is, sent with listens and now-playing (zone and map cell; null = send none).</summary>
+    public XivLocation? Location { get; init; }
 
     public SpaceghostScrobbles(HttpClient http, string clientToken, string endpoint = DefaultEndpoint)
     {
@@ -267,13 +282,44 @@ public sealed class SpaceghostScrobbles : IScrobbler
     private async Task SubmitAsync(string type, Track track, DateTimeOffset? at, CancellationToken ct)
     {
         using var request = Request(HttpMethod.Post, "/1/submit-listens");
-        request.Content = new StringContent(ListenBrainz.Body(type, track, at).ToJsonString(), Encoding.UTF8, "application/json");
+        request.Content = new StringContent(ListenBrainz.Body(type, track, at, Location).ToJsonString(), Encoding.UTF8, "application/json");
+        using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
+        CheckResponse(response);
+    }
+
+    /// <summary>The public per-zone and per-cell listening aggregate (no token needed).</summary>
+    public async Task<EorzeaMap> GetEorzeaMapAsync(CancellationToken ct)
+    {
+        using var response = await http.GetAsync(endpoint + "/api/views/ffxiv/eorzea", ct).ConfigureAwait(false);
+        CheckResponse(response);
+        return EorzeaJson.ParseMap(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+    }
+
+    /// <summary>Consenting crew members who are playing now. Needs in-world presence on for this account.</summary>
+    public async Task<IReadOnlyList<PresenceMember>> GetPresenceAsync(CancellationToken ct)
+    {
+        using var request = Request(HttpMethod.Get, "/1/xiv/presence");
+        using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
+        CheckResponse(response);
+        return EorzeaJson.ParsePresence(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+    }
+
+    /// <summary>Switch in-world presence on (with the character hash) or off for this account.</summary>
+    public async Task SetPresenceAsync(bool on, string? characterHash, CancellationToken ct)
+    {
+        using var request = Request(HttpMethod.Post, "/1/user/settings");
+        var body = new JsonObject { ["xiv_presence"] = on };
+        if (on && characterHash is not null)
+            body["xiv_char"] = characterHash;
+        request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
         using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
         CheckResponse(response);
     }
 
     private static void CheckResponse(HttpResponseMessage response)
     {
+        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Spaceghost Scrobbles refused this (403): in-world presence is for crew members who switched it on.", null, response.StatusCode);
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             throw new HttpRequestException("Spaceghost Scrobbles rejected the client token. Create a new token in the dashboard.", null, response.StatusCode);
         if (!response.IsSuccessStatusCode)
